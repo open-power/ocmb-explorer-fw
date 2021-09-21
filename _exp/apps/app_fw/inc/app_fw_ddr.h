@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -94,6 +94,7 @@ EXTERN app_fw_ddr_calibration_data_struct app_fw_ddr_saved_data;
 
 EXTERN PMCFW_ERROR app_fw_ddr_calibration_save(app_fw_ddr_calibration_data_struct *ddr_training_data);
 EXTERN PMCFW_ERROR app_fw_ddr_calibration_load(app_fw_ddr_calibration_data_struct *ddr_training_data);
+EXTERN PMCFW_ERROR app_fw_ddr_calibration_read(UINT32 offset, UINT32 size, VOID * rx_data_ptr, UINT32 * size_read);
 EXTERN PMCFW_ERROR app_fw_ddr_bringup_init(void);
 EXTERN void app_fw_ddr_cmdsvr_init(void);
 

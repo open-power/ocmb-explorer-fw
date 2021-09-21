@@ -28,13 +28,6 @@
 ** Local Constants
 */
 
-/* 
-** Set to 1 to enable SPI flash support in FLM, or 0 to disable. Enabling SPI 
-** support disables support for parallel flash devices (including CFI querying), 
-** while disabling SPI support enables support for parallel flash devices.
-*/
-#define FLM_SPI 1
-
 /* SPI flash port and chip select. These must be defined when FLM_SPI is 1. */
 #define FLM_SPI_PORT 0
 #define FLM_SPI_CS   0

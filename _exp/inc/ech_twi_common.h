@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -65,12 +65,11 @@ typedef struct
 {
     volatile BOOL       deferred_cmd_flag;                      /**< When Set, VPE0 will process this command */
     exp_twi_cmd_enum    command_id;                             /**< Command ID */
-    UINT32              (*deferred_cmd_handler)(UINT8 *, UINT32);       /**< Command Handler */
+    UINT32              (*deferred_cmd_handler)(UINT8*, UINT32);/**< Command Handler */
     UINT8               *cmd_buf;                               /**< Command Buffer required for command handler */
     UINT32               cmd_buf_idx;                           /**< Command Buffer index required for command handler */
     VOID                (*callback_handler) (UINT8);            /**< Callback Handler */
 } ech_twi_deferred_cmd_handler_struct;
-
 
 
 /*
@@ -84,7 +83,6 @@ EXTERN UINT32 g_exp_fw_twi_cmd_reg_read;
 EXTERN UINT32 g_exp_fw_twi_cmd_reg_write;
 EXTERN UINT8 twi_cmd_id;
 EXTERN UINT8 ech_twi_fw_mode_byte;
-EXTERN BOOL ech_pqm_mode;
 EXTERN UINT8 ech_twi_deferred_cmd_buf[EXP_TWI_MAX_BUF_SIZE];
 EXTERN UINT32 ech_twi_rx_len;
 EXTERN UINT32 ech_twi_rx_index;
@@ -116,12 +114,24 @@ EXTERN VOID ech_twi_init(UINT32 mst_port, UINT32 slv_port, UINT32 slv_addr);
 EXTERN VOID ech_oc_init(VOID);
 EXTERN VOID ech_twi_poll_abort_flag_set(BOOL abort_flag);
 EXTERN BOOL ech_twi_poll_abort_flag_get(VOID);
+EXTERN UINT8* ech_twi_tx_buf_get(VOID);
+EXTERN VOID ech_twi_status_byte_set(UINT8 status_byte);
+EXTERN VOID ech_twi_rx_index_inc(UINT32 bytes_processed);
+EXTERN VOID ech_twi_slave_proc(UINT32 port_id);
+EXTERN VOID ech_twi_fw_mode_set(UINT8 fw_mode_byte);
+EXTERN UINT8 ech_twi_fw_mode_get(VOID);
+EXTERN VOID ech_twi_cdr_offset_from_cal_set(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN VOID ech_twi_cdr_bandwidth_set(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN VOID ech_twi_continuous_serdes_cal_disable(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN VOID ech_twi_prbs_cal_status(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN VOID ech_twi_read_active_logs(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN VOID ech_twi_read_saved_ddr_params(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id);
+EXTERN UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index);
 
-/* Callback */
 EXTERN VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id, 
-                                                       UINT32 (*func_ptr)(UINT8 *, UINT32), 
+                                                       UINT32 (*func_ptr)(UINT8*, UINT32), 
                                                        VOID *buf, 
-                                                       VOID (*callback_func_ptr) (UINT8),
+                                                       VOID (*callback_func_ptr)(UINT8),
                                                        UINT32 len,
                                                        UINT32 rx_index);
 

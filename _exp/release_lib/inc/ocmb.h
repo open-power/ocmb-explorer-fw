@@ -65,6 +65,7 @@
 /* Error code */
 #define OCMB_API_MCBIST_NOT_COMPLETE          OCMB_API_ERR_CODE_CREATE(0x001) /* MCBIST is still running */
 #define OCMB_API_MCBIST_FAILED                OCMB_API_ERR_CODE_CREATE(0x002) /* MCBIST failed */
+#define OCMB_API_INVALID_REG_ADDR             OCMB_API_ERR_CODE_CREATE(0x003) /* Invalid OCMB register address */
 
 /*
 ** Structures and Unions
@@ -82,8 +83,12 @@ EXTERN VOID ocmb_api_rxd_flag_set(VOID);
 EXTERN BOOL ocmb_api_rxd_flag_get(VOID);
 EXTERN VOID ocmb_api_temp_dimm0_update(UINT16 temp, BOOL temp_valid, BOOL present, BOOL error);
 EXTERN VOID ocmb_api_temp_dimm1_update(UINT16 temp, BOOL temp_valid, BOOL present, BOOL error);
-EXTERN VOID ocmb_api_temp_onchip_update(UINT16 temp, BOOL temp_valid, BOOL present, BOOL error);
+EXTERN VOID ocmb_api_temp_onchip_update(INT16 temp, BOOL temp_valid, BOOL present, BOOL error);
 EXTERN PMCFW_ERROR ocmb_api_mcbist_result_get(VOID);
+EXTERN VOID ocmb_api_revision_id_set(UINT32 revision_id);
+EXTERN VOID ocmb_api_reg_rmw(UINT32 offset_l, UINT32 mask_l, UINT32 reg_val_l,
+                             UINT32 offset_r, UINT32 mask_r, UINT32 reg_val_r);
+EXTERN void ocmb_fir_clear(void);
 EXTERN BOOL ocmb_reg_addr_valid(UINT32 addr);
 EXTERN BOOL ocmb_reg_addr_write_only(UINT32 addr);
 EXTERN BOOL ocmb_left_address_validate(UINT32 addr);

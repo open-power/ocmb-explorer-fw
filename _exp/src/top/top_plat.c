@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -33,6 +33,17 @@
 #include "top_plat.h"
 #include "top.h"
 #include <string.h>
+#include "cpuhal.h"
+
+/*
+** Constants
+*/
+
+#define INT_SR_REG_INT_ENABLE_BIT   0x00000001
+
+/*
+** Local Variables
+*/
 
 /**
 * @brief
@@ -54,5 +65,68 @@ PUBLIC PMCFW_ERROR top_device_id_override(UINT32* dev_id)
     return PMC_SUCCESS;
 }
 
+/**
+* @brief
+*   Prepare to enter critical region. Disable so 64-bit OCMB
+*   registers or SPI flash can be accessed without interference
+*   from other VPEs or interrupts.
+*
+*   Disable interrupts and multi-VPE operation.
+*  
+* @param[out] lock_struct_ptr - Pointer to the lock structure.
+*
+* @return
+*   None.
+*
+* @note
+*
+*/
+PUBLIC void top_plat_critical_region_enter(top_plat_lock_struct * lock_struct_ptr)
+{
+    /* disable interrupts */
+    lock_struct_ptr->int_status = hal_int_global_disable();
 
+    /* disable VPE */
+    lock_struct_ptr->vpe_status = hal_disable_mvpe();
+
+    /* disable MTC */
+    lock_struct_ptr->mtc_status = hal_disable_mtc();
+}
+
+/**
+* @brief
+*   Prepare to exit critical region so 64-bit OCMB registers or
+*   SPI flash can be accessed without interference from other
+*   VPEs or interrupts.
+*
+*   Enable interrupts and multi-VPE operation.
+* 
+* @param[out] lock_struct - Lock structure.
+*
+* @return
+*   None.
+*
+* @note
+*
+*/
+PUBLIC void top_plat_critical_region_exit(top_plat_lock_struct lock_struct)
+{
+    /* restore MTC */
+    hal_restore_mtc(lock_struct.mtc_status);
+
+    /* resume other VPE */
+    hal_restore_mvpe(lock_struct.vpe_status);
+
+    /* 
+    ** if interrupts were previously enabled, re-enable interrupts 
+    ** NOTE: do not use hal_int_global_restore() as it is not PIC compliant 
+    */ 
+    if (INT_SR_REG_INT_ENABLE_BIT == (lock_struct.int_status & INT_SR_REG_INT_ENABLE_BIT))
+    {
+        /* interrupts were previously enabled */
+
+        /* re-enable interrupts */
+        hal_int_global_enable();
+    }
+}
 

@@ -44,8 +44,6 @@
 
 EXTERN void ocmb_plat_crash_dump_register(void);
 EXTERN BOOL ocmb_init(void);
-PUBLIC void ocmb_plat_critical_region_enter(void);
-PUBLIC void ocmb_plat_critical_region_exit(void);
 
 #endif /* _OMCB_PLAT_H */
 

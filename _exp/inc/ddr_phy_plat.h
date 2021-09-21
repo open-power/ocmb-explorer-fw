@@ -60,7 +60,9 @@
 EXTERN VOID ddr_phy_plat_init(VOID);
 EXTERN VOID ddr_phy_plat_initialized_set(BOOL is_initialized);
 EXTERN BOOL ddr_phy_plat_initialized_get(VOID);
-EXTERN VOID ddr_phy_plat_fatal_init(void);
+EXTERN VOID ddr_phy_fatal_init(void);
+EXTERN VOID ddr_phy_non_fatal_init(void);
+
 
 
 #endif /* _DDR_PHY_PLAT_H */

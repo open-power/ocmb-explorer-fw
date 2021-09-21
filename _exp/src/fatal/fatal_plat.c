@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -84,8 +84,10 @@ PUBLIC void fatal_plat_init(void)
      * block. 
      */
     gpbce_fatal_init();
-    ddr_phy_plat_fatal_init();
     pcse_irq_plat_fatal_init();
+    top_non_fatal_init();
+    top_fatal_init();
+    spi_fatal_init();
 
     /**
      * Configure fatal interrupt handling for all required blocks.
@@ -97,6 +99,15 @@ PUBLIC void fatal_plat_init(void)
     cicint_int_register(PCSE_IRQ_0_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void*)PCSE_IRQ_0_INT);
     cicint_int_register(OPSW_CR_I_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void *)OPSW_CR_I_INT);
     cicint_int_register(OPSW_CR_I1_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void *)OPSW_CR_I1_INT);
+    cicint_int_register(WDT_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void *)WDT_INT);
+    cicint_int_register(TIMER_2_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void *)TIMER_2_INT);
+
+    /**
+     * Configure non-fatal interrupt handling for all required 
+     * blocks. 
+     */
+    cicint_int_register(DDR4_PHY_NON_FATAL_INT, (cicint_cback_fcn_ptr)non_fatal_error_handler, (void*)DDR4_PHY_NON_FATAL_INT);
+    cicint_int_register(TOP_NON_FATAL_INT, (cicint_cback_fcn_ptr)non_fatal_error_handler, (void*)TOP_NON_FATAL_INT);
 
     /**
      * Enable fatal interrupts.
@@ -108,6 +119,22 @@ PUBLIC void fatal_plat_init(void)
     cicint_int_enable(PCSE_IRQ_0_INT);
     cicint_int_enable(OPSW_CR_I_INT);
     cicint_int_enable(OPSW_CR_I1_INT);
+    cicint_int_enable(WDT_INT);
+    cicint_int_enable(TIMER_2_INT);
+
+    /**
+     * Enable non-fatal interrupts.
+     */
+    cicint_int_enable(DDR4_PHY_NON_FATAL_INT);
+    cicint_int_enable(TOP_NON_FATAL_INT);
+
+    /**
+     * Configure and enable for FAIL_n. 
+     *  
+     */
+    cicint_int_register(FAIL_N_INT, (cicint_cback_fcn_ptr)fatal_error_handler, (void*)FAIL_N_INT);
+    cicint_int_enable(FAIL_N_INT);
+    
 
     return;
 

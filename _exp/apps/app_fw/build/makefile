@@ -1,7 +1,7 @@
 #********************************************************************************
 # MICROCHIP PM8596 EXPLORER FIRMWARE
 #                                                                               
-# Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+# Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 #                                                                               
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 # use this file except in compliance with the License. You may obtain a copy of 
@@ -102,7 +102,7 @@ LOCAL_CSOURCES := $(APP_PLAT_DIR)/src/app_fw_main.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/ddr/ddr_plat.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/fam/fam_plat.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/fatal/fatal_plat.c \
-				  $(SRCTL)/$(PMC_TOP_LEVEL)/src/flashloader/flashloader_plat.c \
+                  $(SRCTL)/$(PMC_TOP_LEVEL)/src/flashloader/flashloader_plat.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/crash_dump/crash_dump_plat.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/temp_sensor/temp_sensor_driver_plat.c \
                   $(SRCTL)/$(PMC_TOP_LEVEL)/src/ccb/ccb_plat.c
@@ -154,11 +154,14 @@ export INCLUDEDIRS := $(SRCTL)/$(PMC_TOP_LEVEL)/inc \
                       $(SRCTL)/shared/fatal/inc \
                       $(SRCTL)/shared/opsw/inc \
                       $(SRCTL)/shared/pcse/inc \
-					  $(SRCTL)/shared/flashloader/inc \
+                      $(SRCTL)/shared/flashloader/inc \
+                      $(SRCTL)/shared/ocmb_erep/inc \
                       $(SRCTL)/ddr_phy_toolbox/inc \
                       $(SRCTL)/ddr_phy_toolbox/vendor/ddr_phy_lib/software \
                       $(SRCTL)/$(PMC_TOP_LEVEL)/libs/ddr_phy/inc \
-                      $(SRCTL)/shared/cpuhal/inc
+                      $(SRCTL)/shared/cpuhal/inc \
+                      $(SRCTL)/shared/wdt/inc \
+                      $(SRCTL)/shared/pvt/inc
 
 ifeq ($(BLD_MODE),dev)
  LIB_MODULES := $(PMC_TOP_LEVEL)/libs/ddr_phy
@@ -200,8 +203,11 @@ LDFLAGS+= -rawimport  $(FW_VERSION).bin
 all: $(PROGRAM).elf
 	rm -f $(FW_VERSION).bin
 ifdef SIGN
-	$(SRCTL)/tools/bin/sign_fw_image.sh -a $(SRCTL)/tools/bin/lib/gobinz.exe -i $(PROGRAM).mem -o signed_$(PROGRAM).mem -c $(CSV)
-	$(APP_PLAT_DIR)/build/make_fw_partition.sh -i signed_$(PROGRAM).mem -a signed_$(PROGRAM)_jtag_A.out -b signed_$(PROGRAM)_jtag_B.out -f signed_$(PROGRAM)_full_image.out 
+	$(SRCTL)/tools/bin/sign_fw_image.sh -t $(SRCTL)/tools/bin/lib/securesign.exe -s $(SRCTL)/tools/bin/lib/gobinz.exe -i $(PROGRAM).mem -o signed_$(PROGRAM).mem -c $(CSV)
+ifndef DEBUG
+	$(APP_PLAT_DIR)/build/make_fw_partition.sh -i signed_$(PROGRAM).mem -a signed_$(PROGRAM)_jtag_A.out -b signed_$(PROGRAM)_jtag_B.out -f signed_$(PROGRAM)_full_image_8MB.out -s 0x00600000
+	$(APP_PLAT_DIR)/build/make_fw_partition.sh -i signed_$(PROGRAM).mem -a signed_$(PROGRAM)_jtag_A.out -b signed_$(PROGRAM)_jtag_B.out -f signed_$(PROGRAM)_full_image_16MB.out -s 0x00C00000
+endif
 endif
 
 $(PROGRAM).elf: $(FW_VERSION).bin

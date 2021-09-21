@@ -20,14 +20,14 @@
 *     Please put this file in the same location as the source file.
 *     
 *     This file is generated from:
-*     Foxhound_RevA_Config_Guide_pdox_r0_53.xlsx (0.53)
+*     Foxhound_RevB_Config_Guide_v014.xlsx (0.14)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_53.xlsx
-*     -r0.53 -pFoxhound_RevA_Config_Guide_pdox_r0_53.parsed
+*     python ConfigGuideConv.py -gFoxhound_RevB_Config_Guide_v014.xlsx -r0.14
+*     -pFoxhound_RevB_Config_Guide_v014.parsed
 *     -nnamespace_exp_p_a_release_047.tcl -cserdes_config_guide.c
 *     -hserdes_config_guide.h
-*     -xFHCG_init,FHCG_LBinit,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,FH_IQ_Offset_Calibration
+*     -xFHCG_LBinit,FHCG_init,FHCG_orig_init,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_IQ_Offset_Calibration,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,PJ_INJ_Config,FH_CDR_Offset_Calibration,FH_Meas_BER_Linking
 *     -fSERDES -a
 * 
 * 

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -40,6 +40,8 @@
 #include "spi_api.h"
 #include "spi_flash_api.h"
 #include "spi_flash_plat.h"
+#include "crash_dump.h"
+#include "top_plat.h"
 
 /*
 ** Local Constants
@@ -59,6 +61,11 @@
 
 /* Default value for SPI pullups */
 #define SPI_PLAT_DEFAULT_PULLUP_VALUE       0x0
+
+/*
+** Size of the crash dump section allocated for SPI registers. 
+*/
+#define SPI_REG_CRASH_DUMP_SIZE             1024
 
 /*
 ** Local Variables
@@ -121,9 +128,6 @@ PUBLIC spi_plat_wci_mode_get_fn_ptr_type spi_plat_wci_mode_get_fn_ptr = _spi_pla
 
 PUBLIC PMCFW_ERROR _spi_plat_flash_poll_write_erase_complete(BOOL write, UINT32 timeout);
 PUBLIC spi_plat_flash_poll_write_erase_complete_fn_ptr_type spi_plat_flash_poll_write_erase_complete_fn_ptr = _spi_plat_flash_poll_write_erase_complete;
-
-PUBLIC PMCFW_ERROR _spi_plat_flash_write_pages(UINT8* src_ptr, UINT8* dst_ptr, UINT32 len, UINT32 page_size, UINT32 timeout);
-PUBLIC spi_plat_flash_write_pages_fn_ptr_type spi_plat_flash_write_pages_fn_ptr = _spi_plat_flash_write_pages;
 
 
 /*
@@ -195,7 +199,8 @@ PUBLIC spi_parms_struct *spi_parms_get(VOID)
 *****************************************************************************/
 PUBLIC VOID spi_plat_init(VOID)
 {
-
+    /* Register the crash dump callback to print SPI registers to the crash dump. */
+    crash_dump_register(CRASH_DUMP_SET_0, "SPI_REGS", &spi_dump_debug_info, CRASH_DUMP_ASCII, SPI_REG_CRASH_DUMP_SIZE);
 }
 
 /*******************************************************************************
@@ -351,6 +356,7 @@ PUBLIC PMCFW_ERROR _spi_plat_flash_poll_write_erase_complete(BOOL write, UINT32 
     UINT_TIME timeout_cpu_clk; /* timeout in CPU clocks */
     BOOL complete;
     PMCFW_ERROR rc;
+    top_plat_lock_struct lock_struct;
 
     cpu_clk_start = sys_timer_read();
     timeout_cpu_clk = sys_timer_us_to_count(timeout);
@@ -361,7 +367,14 @@ PUBLIC PMCFW_ERROR _spi_plat_flash_poll_write_erase_complete(BOOL write, UINT32 
 
         if (write)
         {
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_critical_region_enter(&lock_struct);
+
             rc = spi_flash_write_complete(SPI_FLASH_PORT, SPI_FLASH_CS, &complete);
+
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct);
+
             if (rc != PMC_SUCCESS)
             {
                 break;
@@ -369,7 +382,14 @@ PUBLIC PMCFW_ERROR _spi_plat_flash_poll_write_erase_complete(BOOL write, UINT32 
         }
         else
         {
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_critical_region_enter(&lock_struct);
+
             rc = spi_flash_erase_complete(SPI_FLASH_PORT, SPI_FLASH_CS, &complete);
+
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct);
+
             if (rc != PMC_SUCCESS)
             {
                 break;
@@ -405,73 +425,6 @@ PMC_END_RAM_PROGRAM
 
 /**
 * @brief
-*   Write data to SPI flash.
-*
-* @param
-*   src_ptr - source address
-*   dst_ptr - destination address
-*   len - data length in bytes
-*   page_size - SPI flash page size in bytes
-*   timeout - SPI write timeout
-*
-*  @return
-*   PMC_SUCCESS if no error
-*   Error specific code otherwise
-*
-* @note
-*/
-PMC_RAM_PROGRAM
-PUBLIC PMCFW_ERROR _spi_plat_flash_write_pages(UINT8* src_ptr,
-                                               UINT8* dst_ptr,
-                                               UINT32 len,
-                                               UINT32 page_size,
-                                               UINT32 timeout)
-{
-    UINT32 write_len;
-    PMCFW_ERROR rc;
-
-    /* convert to the logical page size, which will be different if ECC is enabled */
-    page_size = spi_size_phys_to_log(SPI_FLASH_PORT, page_size);
-
-    /* write up until the end of the current page */
-    write_len = page_size - (((UINT32)dst_ptr % page_size));
-
-    while (len > 0)
-    {
-        write_len = min(write_len, len);
-
-        /* write */
-        rc = spi_flash_write(SPI_FLASH_PORT,
-                             SPI_FLASH_CS,
-                             src_ptr,
-                             (UINT8*)((UINT32)dst_ptr & GPBC_FLASH_PHYS_ADDR_MASK),
-                             write_len);
-
-        if (rc != PMC_SUCCESS)
-        {
-            return (rc);
-        }
-
-        rc = spi_plat_flash_poll_write_erase_complete(TRUE, timeout);
-        if (rc != PMC_SUCCESS)
-        {
-            return (rc);
-        }
-
-        src_ptr += write_len;
-        dst_ptr += write_len;
-        len -= write_len;
-
-        /* write the remaining data one page at a time */
-        write_len = page_size;
-    }
-
-    return (PMC_SUCCESS);
-}
-PMC_END_RAM_PROGRAM
-
-/**
-* @brief
 *   adjust pointers to functions in RAM to accommodate PIC
 *   start-up adding flash offset to initialized function
 *   pointers
@@ -489,7 +442,6 @@ PUBLIC VOID spi_plat_ram_code_ptr_adjust(UINT32 offset)
     spi_plat_cs_wait_get_fn_ptr                     = (spi_plat_cs_wait_get_fn_ptr_type)((UINT32)spi_plat_cs_wait_get_fn_ptr                                         - offset);
     spi_plat_wci_mode_get_fn_ptr                    = (spi_plat_wci_mode_get_fn_ptr_type)((UINT32)spi_plat_wci_mode_get_fn_ptr                                       - offset);
     spi_plat_flash_poll_write_erase_complete_fn_ptr = (spi_plat_flash_poll_write_erase_complete_fn_ptr_type)((UINT32)spi_plat_flash_poll_write_erase_complete_fn_ptr - offset);
-    spi_plat_flash_write_pages_fn_ptr               = (spi_plat_flash_write_pages_fn_ptr_type)((UINT32)spi_plat_flash_write_pages_fn_ptr                             - offset);
 }
 
 

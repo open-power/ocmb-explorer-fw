@@ -1,16 +1,16 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
-*                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
-*                                                                               
-* Licensed under the Apache License, Version 2.0 (the "License"); you may not 
-* use this file except in compliance with the License. You may obtain a copy of 
+*
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License"); you may not
+* use this file except in compliance with the License. You may obtain a copy of
 * the License at http://www.apache.org/licenses/LICENSE-2.0
-*                                                                               
-* Unless required by applicable law or agreed to in writing, software 
-* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT 
-* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the 
-* License for the specific language governing permissions and limitations under 
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+* License for the specific language governing permissions and limitations under
 * the License.
 ********************************************************************************/
 
@@ -48,8 +48,14 @@
 #include "serdes_plat.h"
 #include "pmc_plat.h"
 #include "ech_twi_common.h"
-#include "ocmb_plat.h"
+#include "top_plat.h"
 #include "ocmb.h"
+#include "wdt.h"
+#include "serdes_cg_supplement.h"
+#include "fw_version_info.h"
+#include "ccb_api.h"
+#include "char_io.h"
+#include "app_fw_ddr.h"
 
 
 /*
@@ -73,13 +79,6 @@
 /*
 ** Forward declarations
 */
-PUBLIC PMCFW_ERROR ech_twi_slv_cmd_rx(UINT32 port_id, UINT8* rx_buf_ptr, UINT32* rx_len_ptr, UINT32* actvity_ptr);
-PUBLIC VOID ech_twi_status_proc(UINT32 port_id);
-PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index);
-PUBLIC VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf);
-PUBLIC VOID ech_twi_reg_read_proc(UINT32 port_id, UINT8* rx_buf);
-PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf);
-PUBLIC VOID ech_twi_command_id_set(UINT8 id);
 EXTERN VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_index);
 
 
@@ -101,17 +100,14 @@ PRIVATE UINT8 ech_twi_status_byte = EXP_TWI_SUCCESS;
 PUBLIC UINT8 twi_cmd_id = EXP_FW_TWI_CMD_NULL;
 
 /* TWI FW mode*/
-PUBLIC UINT8 ech_twi_fw_mode_byte = EXP_TWI_STATUS_RUN_TIME;
-
+PUBLIC UINT8 ech_twi_fw_mode_byte = EXP_TWI_STATUS_RUN_TIME |
+                                    (EXP_TWI_STATUS_FW_API_VERSION_BITMSK & (FW_API_VERSION_NUMBER << EXP_TWI_STATUS_FW_API_VERSION_BITOFF));
 
 /* TWI RX/TX data management */
 PUBLIC UINT32 ech_twi_rx_len = 0;
 PUBLIC UINT32 ech_twi_rx_index = 0;
 PUBLIC UINT8 ech_twi_rx_buf[EXP_TWI_MAX_BUF_SIZE];
 PUBLIC UINT8 ech_twi_tx_buf[EXP_TWI_MAX_BUF_SIZE];
-
-/* Product Qualification Mode */
-PUBLIC BOOL ech_pqm_mode = FALSE;
 
 
 /* TWI activity tracker */
@@ -125,6 +121,11 @@ PUBLIC UINT32 twi_activity = TWI_SLAVE_ACTIVITY_NONE;
 /* poll abort flag used to exit infinite loops in config guide code */
 PRIVATE BOOL ech_twi_poll_abort_flag = TRUE;
 
+#if (EXPLORER_DDR_TRAIN_PARMS_SAVE_DISABLE == 0)
+/* Variable to keep track of the read position in subsequent calls to ech_twi_read_saved_ddr_params */
+PRIVATE UINT32 read_ddr_params_offset = 0;
+#endif
+
 /*
 ** see EBCF-10490
 ** when TWI writes are into 64-bit OCMB memory space, the first 32-bit
@@ -137,11 +138,11 @@ PRIVATE UINT32 ocmb_reg_left_addr = ECH_OCMB_INVALID_ADDR;
 PRIVATE UINT32 ocmb_reg_left_data;
 
 
-/* 
-** lengths of TWI commands 
-** these entries must be kept aligned with exp_twi_cmd_enum 
-*/ 
-PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] = 
+/*
+** lengths of TWI commands
+** these entries must be kept aligned with exp_twi_cmd_enum
+*/
+PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
 {
     0,                                                  /**< Null command */
     EXP_TWI_BOOT_CFG_CMD_LEN,                           /**< Boot config */
@@ -153,7 +154,7 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
     EXP_TWI_CONT_READ_CMD_LEN,                          /**< Continuous read */
     EXP_TWI_CONT_WRITE_CMD_LEN,                         /**< Continuous write */
     EXP_TWI_BYPASS_4SEC_TIMEOUT,                        /**< Skip the 4 sec wait */
-    EXP_TWI_PQM_LANE_SET_CMD_LEN,                        /**< Set SerDes lane configuration */ 
+    EXP_TWI_PQM_LANE_SET_CMD_LEN,                        /**< Set SerDes lane configuration */
     EXP_TWI_PQM_LANE_GET_CMD_LEN,                        /**< Get SerDes lane configuration */
     EXP_TWI_PQM_FREQ_SET_CMD_LEN,                        /**< Set SerDes clock frequency */
     EXP_TWI_PQM_FREQ_GET_CMD_LEN,                        /**< Get SerDes clock frequency */
@@ -179,7 +180,13 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
     EXP_TWI_PQM_TWOD_BATHTUB_GET_READ_CMD_LEN,           /**< Read 2D bathtub values */
     EXP_TWI_PQM_DELAY_LINE_UPDATE_CMD_LEN,               /**< Delay line update */
     EXP_TWI_POLL_ABORT_CMD_LEN,                          /**< Abort command */
-    EXP_TWI_FFE_SETTINGS_CMD_LEN                         /**< FFE settings */
+    EXP_TWI_FFE_SETTINGS_CMD_LEN,                         /**< FFE settings */
+    EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_CMD_LEN,      /**< Change the CDR offset from the calibrated value */
+    EXP_TWI_EXP_FW_CDR_BANDWIDTH_SET_CMD_LEN,            /**< Change the CDR bandwidth prior to boot config 0 */
+    EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_CMD_LEN,         /**< Report further information about the PRBS cal that was performed */
+    EXP_TWI_EXP_FW_CONT_SERDES_CAL_DISABLE_CMD_LEN,      /**< Disable / re-enable SerDes continuous calibration */
+    EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_CMD_LEN,             /**< Read active logs over TWI interface */
+    EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_CMD_LEN         /**< Read DDR parameters that are saved in flash over the TWI interface */
 };
 
 
@@ -198,7 +205,7 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
 *   the host to direct the Explorer firmware to break out of
 *   infinite loops waiting on external signals. This flag is set
 *   to FALSE before the code enters an infinite loop.
-* 
+*
 * @return
 *   FALSE - code will continue in polling mode
 *   TRUE - code will break out of polling mode
@@ -207,6 +214,18 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
 */
 PUBLIC BOOL ech_twi_poll_abort_flag_get(VOID)
 {
+
+#if (EXPLORER_WDT_DISABLE == 0)
+    /*
+    ** Kick the WDT in this function because this function
+    ** is used to determine if the Host wants us to abort
+    ** an infinite loop.  This means that this function is
+    ** called by every infinite loop and we want to kick
+    ** the WDT while in an infinite loop.
+    */
+    wdt_hardware_tmr_kick();
+#endif
+
     return ech_twi_poll_abort_flag;
 
 } /* ech_twi_poll_abort_flag_get */
@@ -217,7 +236,7 @@ PUBLIC BOOL ech_twi_poll_abort_flag_get(VOID)
 *   the host to direct the Explorer firmware to break out of
 *   infinite loops waiting on external signals. This flag is set
 *   to FALSE before the code enters an infinite loop.
-* 
+*
 * @return Nothing
 *
 * @note
@@ -228,7 +247,7 @@ PUBLIC VOID ech_twi_poll_abort_flag_set(BOOL abort_flag)
 
 } /* ech_twi_poll_abort_flag_set*/
 
-/** 
+/**
 * @brief
 *   Get the TWI status byte. This byte constains the result of
 *   the last TWI message received by the Explorer. Poissble
@@ -237,10 +256,10 @@ PUBLIC VOID ech_twi_poll_abort_flag_set(BOOL abort_flag)
 *       EXP_TWI_ERROR (0xC0)
 *       EXP_TWI_UNSUPPORTED (0xD0)
 *       EXP_TWI_BUSY (0xFE)
-*  
+*
 * @params
 *   None
-*   
+*
 * @return
 *   The TWI status byte.
 *
@@ -267,25 +286,25 @@ PUBLIC VOID ech_twi_status_byte_set(UINT8 status_byte)
 
 /**
 * @brief
-*   Set Deferred TWI command processing structure 
+*   Set Deferred TWI command processing structure
 * @param [in] cmd_id            - Command ID
 * @param [in] func_ptr          - Pointer to deferred command handler
 * @param [in] buf               - reference to received data buffer
 * @param [in] callback_func_ptr - Callback function pointer
 * @param [in] len               - Command length
 * @param [in] rx_index          - index in buffer of start of received PQM command
-*   
+*
 * @return
 *   Nothing
 *
 * @note
 */
-PUBLIC VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id, 
-                                                        UINT32 (*func_ptr)(UINT8 *, UINT32), 
-                                                        VOID *buf, 
-                                                        VOID (*callback_func_ptr) (UINT8),
-                                                        UINT32 len,
-                                                        UINT32 rx_index)
+PUBLIC VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id,
+                                                       UINT32 (*func_ptr)(UINT8*, UINT32),
+                                                       VOID *buf,
+                                                       VOID (*callback_func_ptr)(UINT8),
+                                                       UINT32 len,
+                                                       UINT32 rx_index)
 {
     ech_def_handler.command_id = cmd_id;
     ech_def_handler.cmd_buf = buf;
@@ -294,11 +313,10 @@ PUBLIC VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id,
     ech_def_handler.deferred_cmd_handler = func_ptr;
     ech_def_handler.deferred_cmd_flag = TRUE;
 
-    /* 
+    /*
     ** Since this command will be handled by VPE0,
     ** increase rx index to allow the processing
     ** of other I2C commands by VPE1
-    ** 
     */
     ech_twi_rx_index_inc(len);
 }
@@ -314,7 +332,7 @@ PUBLIC VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id,
 *
 * @return
 *   PMC_SUCCESS - For SUCCESS, otherwise error code
-*   
+*
 *
 * @note
 */
@@ -386,7 +404,7 @@ PUBLIC PMCFW_ERROR ech_twi_slv_cmd_rx(UINT32 port_id,
 /**
 * @brief
 *   Set the TWI command ID
-* @param [in]  id - Command ID from HOST 
+* @param [in]  id - Command ID from HOST
 * @return
 *   Nothing
 *
@@ -433,18 +451,19 @@ PUBLIC VOID ech_twi_status_proc(UINT32 port_id)
     /*
     ** send 32-bit response MSB first:
     **  bits 24-31: Extended error code
-    **  bits 23-18: reserved
+    **  bits 23-19: reserved 
+    **  bit 18:     serdes PRBS algorithm supported 
     **  bits 17-16: boot stage
     **  bits 15-8:  status byte
     **  bits 7-0:   status command code
        */
 
-    /* reserved */
+    /* extended error specific to detected error */
     ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = ech_extended_error_code_get();
 
     /* boot mode */
     /* fixed value for now */
-    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1] = ech_twi_fw_mode_get(); 
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1] = ech_twi_fw_mode_get();
 
     /* status code */
     ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 2] = ech_twi_status_byte_get();
@@ -483,7 +502,7 @@ PUBLIC VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf)
                       (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 3]);
 
     /* presume latch succeeds, overwritten if error detected */
-    ech_twi_status_byte = EXP_TWI_SUCCESS;
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
 
     if (OCMB_REGS_BASE_ADDR == (reg_addr & ECH_REG_64_BIT_MASK))
     {
@@ -491,57 +510,66 @@ PUBLIC VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf)
 
         if (FALSE == ocmb_reg_addr_valid(reg_addr))
         {
-            /* 
-            ** invalid OCMB reg address 
-            ** set the status query extended error code 
-            ** and the "address" in case host does not issue status query
-            ** before issuing second sequence of TWI read 
-            */ 
+            /* invalid OCMB reg address */
+            bc_printf("REG_ADDR_LATCH: Invalid OCMB address 0x%08x\n", reg_addr);
+
+            /* set the extended error code */
             ech_extended_error_code_set(EXP_TWI_REG_RW_ADDR_INVALID);
-            ech_latched_reg_addr_set(EXP_TWI_REG_RW_ADDR_INVALID);
-            ech_twi_status_byte = EXP_TWI_ERROR;
+
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
         }
         else if (TRUE == ocmb_reg_addr_write_only(reg_addr))
         {
-            /* 
-            ** write only OCMB reg address
-            ** set the status query extended error code 
-            ** and the "address" in case host does not issue status query
-            ** before issuing second sequence of TWI read 
-            */ 
+            /* write only OCMB reg address */
+            bc_printf("REG_ADDR_LATCH: Invalid access to Write-Only OCMB register 0x%08x\n", reg_addr);
+
+            /* set the extended error code */
             ech_extended_error_code_set(EXP_TWI_REG_RW_WRITE_ONLY);
-            ech_latched_reg_addr_set(EXP_TWI_REG_RW_WRITE_ONLY);
-            ech_twi_status_byte = EXP_TWI_ERROR;
-        }
 
-        if (EXP_TWI_SUCCESS == ech_twi_status_byte)
-        {
-            /* valid OCMB address */
-
-            /* latch the address */
-            ech_latched_reg_addr_set(reg_addr);
-        }
-    }
-    else
-    {
-        /* validate the register address */
-        if (FALSE == ech_reg_addr_validate(reg_addr))
-        {
-            /* invalid/restricted address */
-            /* latch the "address" */
-            ech_latched_reg_addr_set(EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE);
-
-            /* failure status */
-            ech_twi_status_byte = EXP_TWI_ERROR;
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
         }
         else
         {
-            /* latch the address */
-            ech_latched_reg_addr_set(reg_addr);
+            /* valid OCMB address */
 
-            /* set success status */
-            ech_twi_status_byte = EXP_TWI_SUCCESS;
+            /* set the extended error code */
+            ech_extended_error_code_set(EXP_TWI_SUCCESS);
+
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_SUCCESS);
         }
+
+        /* valid or invalid, latch the address */
+        ech_latched_reg_addr_set(reg_addr);
+    }
+    else
+    {
+        /* access to memory outside OCMB 64-bit address space */
+
+        /* validate the register address */
+        if (FALSE == ech_reg_addr_validate(reg_addr))
+        {
+            /* invalid/restricted address */ 
+
+            /* set the extended error code */
+            ech_extended_error_code_set(EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE);
+
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
+        }
+        else
+        {
+            /* set the extended error code */
+            ech_extended_error_code_set(EXP_TWI_SUCCESS);
+
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+        }
+
+        /* valid or invalid, latch the address */
+        ech_latched_reg_addr_set(reg_addr);
     }
 
     /* increment receive buffer index */
@@ -563,22 +591,23 @@ PUBLIC VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf)
 */
 PUBLIC VOID ech_twi_reg_read_proc(UINT32 port_id, UINT8* rx_buf)
 {
+    /* get the extended error code */
+    UINT8 err_code = ech_extended_error_code_get();
+
+    /* get the latched address */
     UINT32 latched_reg_addr = ech_latched_reg_addr_get();
 
-    if ((EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE == latched_reg_addr) ||
-        (EXP_TWI_REG_RW_ADDR_PROHIBITED == latched_reg_addr) ||
-        (EXP_TWI_REG_RW_ADDR_INVALID == latched_reg_addr) ||
-        (EXP_TWI_REG_RW_WRITE_ONLY == latched_reg_addr))
+    if (EXP_TWI_SUCCESS != err_code)
     {
-        /* invalid register address */
-        ech_twi_status_byte = latched_reg_addr;
+        /* invalid register address, set the status byte */
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
 
-        /* prepare errant value */
+        /* return errant address to host */
         ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = EXP_TWI_REG_READ_RSP_DATA_LEN;
-        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] =     0xBA;
-        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1] = 0xDB;
-        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 2] = 0x10;
-        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 3] = 0x0D;
+        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] =     (latched_reg_addr >> 24) & 0xFF;
+        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1] = (latched_reg_addr >> 16) & 0xFF;
+        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 2] = (latched_reg_addr >> 8)  & 0xFF;
+        ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 3] = (latched_reg_addr >> 0)  & 0xFF;
     }
     else
     {
@@ -591,8 +620,8 @@ PUBLIC VOID ech_twi_reg_read_proc(UINT32 port_id, UINT8* rx_buf)
         ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 2] = (*reg_ptr >> 8) & 0xFF;
         ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 3] = (*reg_ptr >> 0) & 0xFF;
 
-        /* set success status */
-        ech_twi_status_byte = EXP_TWI_SUCCESS;
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_SUCCESS);
     }
 
     /* send the response */
@@ -644,8 +673,13 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
         if (FALSE == ocmb_reg_addr_valid(reg_addr))
         {
             /* invalid OCMB address */
+            bc_printf("REG_WRITE: Invalid OCMB address 0x%08x\n", reg_addr);
+
+            /* set the extended error code */
             ech_extended_error_code_set(EXP_TWI_REG_RW_ADDR_INVALID);
-            ech_twi_status_byte = EXP_TWI_ERROR;
+
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
         }
         else
         {
@@ -659,38 +693,44 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
             */
             if (ECH_OCMB_INVALID_ADDR == ocmb_reg_left_addr)
             {
-                /* 
-                ** first 32-bit register write of 64-bit write 
-                ** ensure the address is a left address (upper 32 bits) 
-                */ 
+                /*
+                ** first 32-bit register write of 64-bit write
+                ** ensure the address is a left address (upper 32 bits)
+                */
                 if (TRUE == ocmb_left_address_validate(reg_addr))
                 {
                     /* valid left address, record the address and data */
                     ocmb_reg_left_addr = reg_addr;
                     ocmb_reg_left_data = reg_data;
 
-                    /* set success status */
-                    ech_twi_status_byte = EXP_TWI_SUCCESS;
+                    /* set status byte */
+                    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
                 }
                 else
                 {
-                   /* invalid left address */
-                   ech_extended_error_code_set(EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID);
-                   ech_twi_status_byte = EXP_TWI_ERROR;
+                    /* invalid left address */
+                    bc_printf("REG_WRITE: Invalid Left OCMB address 0x%08x\n", reg_addr);
+
+                    /* set the extended error code */
+                    ech_extended_error_code_set(EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID);
+
+                    /* set status byte */
+                    ech_twi_status_byte_set(EXP_TWI_ERROR);
                 }
             }
             else
             {
-                /* 
+                /*
                 ** second 32-bit register write of 64-bit write
-                ** ensure the address is a right address (lower 32 bits) 
-                */ 
+                ** ensure the address is a right address (lower 32 bits)
+                */
                 if (TRUE == ocmb_right_address_validate(reg_addr))
                 {
                     /* valid right address */
 
                     /* disable interrupts and disable multi-VPE operation */
-                    ocmb_plat_critical_region_enter();
+                    top_plat_lock_struct lock_struct;
+                    top_plat_critical_region_enter(&lock_struct);
 
                     /* write the left data */
                     *(UINT32*)ocmb_reg_left_addr = ocmb_reg_left_data;
@@ -698,20 +738,25 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
                     /* write the right data */
                     *(UINT32*)reg_addr = reg_data;
 
-                    /* set success status */
-                    ech_twi_status_byte = EXP_TWI_SUCCESS;
+                    /* set status byte */
+                    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
 
                     /* restore interrupts and enable multi-VPE operation */
-                    ocmb_plat_critical_region_exit();
+                    top_plat_critical_region_exit(lock_struct);
 
                     /* invalidate left address */
                     ocmb_reg_left_addr = ECH_OCMB_INVALID_ADDR;
                 }
                 else
                 {
-                   /* invalid right address */
-                   ech_extended_error_code_set(EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID);
-                   ech_twi_status_byte = EXP_TWI_ERROR;
+                    /* invalid right address */
+                    bc_printf("REG_WRITE: Invalid Right OCMB address 0x%08x\n", reg_addr);
+
+                    /* set the extended error code */
+                    ech_extended_error_code_set(EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID);
+
+                    /* set status byte */
+                    ech_twi_status_byte_set(EXP_TWI_ERROR);
                 }
             }
         }
@@ -723,8 +768,11 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
         /* validate the register address */
         if (FALSE == ech_reg_addr_validate(reg_addr))
         {
-            /* invalid/restricted address */
-            ech_twi_status_byte = EXP_TWI_ERROR;
+            /* 
+            ** invalid/restricted address 
+            ** set status byte 
+            */ 
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
         }
         else
         {
@@ -734,13 +782,13 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
             /* confirm the write succeeded */
             if (*(UINT32*)reg_addr == reg_data)
             {
-                /* set success status */
-                ech_twi_status_byte = EXP_TWI_SUCCESS;
+                /* set status byte */
+                ech_twi_status_byte_set(EXP_TWI_SUCCESS);
             }
             else
             {
-                /* set failure status */
-                ech_twi_status_byte = EXP_TWI_ERROR;
+                /* set status byte */
+                ech_twi_status_byte_set(EXP_TWI_ERROR);
             }
         }
     }
@@ -775,7 +823,7 @@ PUBLIC VOID ech_twi_init(UINT32 mst_port, UINT32 slv_port, UINT32 slv_addr)
     /* Initialize the structures with 0*/
     memset((void *)&mst_cfg, 0, sizeof(mst_cfg));
     memset((void *)&slv_cfg, 0, sizeof(slv_cfg));
-    
+
     /* initialize the TWI module */
     twi_init(TWI_OPER_MODE_POLLING);
 
@@ -797,7 +845,7 @@ PUBLIC VOID ech_twi_init(UINT32 mst_port, UINT32 slv_port, UINT32 slv_addr)
     mst_cfg.mst_callback_fptr = NULL;
     mst_cfg.mst_callback_data_ptr = NULL;
     mst_cfg.mst_init_line_reset_en = TRUE;
-    mst_cfg.mst_init_recovery_en = FALSE;
+    mst_cfg.mst_init_recovery_en = TRUE;
     mst_cfg.proto = TWI_PROTO_NONE;
     mst_cfg.ms_mode = TWI_PORT_MS_MODE_MASTER;
 
@@ -832,6 +880,346 @@ PUBLIC VOID ech_twi_fw_mode_set(UINT8 fw_mode_byte)
 PUBLIC UINT8 ech_twi_fw_mode_get(void)
 {
     return ech_twi_fw_mode_byte;
+}
+
+/**
+* @brief
+*   Process the CDR_OFFSET_FROM_CAL_SET command
+*   Adjusts the CDR offset from the calibrated value. Sends a
+*   bitmask of the lanes adjusted on the TWI port
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                PQM command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_cdr_offset_from_cal_set(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+    UINT8 applied_bitmask;
+
+    UINT32 rc;
+
+    UINT8 lane_bitmask = rx_buf_ptr[rx_index + 2];
+    INT8 cdr_index_offset = rx_buf_ptr[rx_index + 3];
+
+    /* Check that PRBS cal was run */
+    if (FALSE == ech_serdes_prbs_cal_state_get()) 
+    {
+        bc_printf("SerDes PRBS calibration must be run first\n");
+        applied_bitmask = 0;
+
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
+    }
+    else
+    {
+        rc = SERDES_FH_CDR_Offset_Force_Offset(lane_bitmask, cdr_index_offset, &applied_bitmask);
+
+        if (PMC_SUCCESS != rc) 
+        {
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_ERROR);
+        }
+        else
+        {
+            /* set status byte */
+            ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+        }
+    }
+
+    bc_printf("CDR Offset on lanes 0x%02x set to offset %i\n", applied_bitmask, cdr_index_offset);
+
+    /* send the response */
+    ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_RSP_DATA_LEN;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = applied_bitmask;
+
+    twi_slv_data_put(port_id,
+                     ech_twi_tx_buf,
+                     EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_RSP_LEN);
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_CMD_LEN);
+}
+
+/**
+* @brief
+*   Process the CDR_BANDWIDTH_SET command
+*   Adjusts the CDR bandwidth from the default value.
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_cdr_bandwidth_set(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+    UINT8 prop_gain = rx_buf_ptr[rx_index + 2];
+    UINT8 integ_gain = rx_buf_ptr[rx_index + 3];
+
+    /* Store the prop and accum gains */
+    if (ech_serdes_cdr_prop_gain_set(prop_gain) && ech_serdes_cdr_integ_gain_set(integ_gain)) 
+    {
+        bc_printf("CDR prop gain set to 0x%02x\nCDR integ gain set to 0x%02x\n", prop_gain, integ_gain);
+
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+    }
+    else
+    {
+        bc_printf("CDR_BANDWIDTH_SET: prop gain or accum gain is out of range\n");
+        
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
+    }
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_CDR_BANDWIDTH_SET_CMD_LEN);
+}
+
+/**
+* @brief
+*   Process the CONT_SERDES_CAL_DISABLE command. Disables /
+*   enables the periodic serdes calibration. This should be
+*   called before generating CDR BER bathtub curves after OMI
+*   training is complete.
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_continuous_serdes_cal_disable(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+    UINT8 cal_disable = rx_buf_ptr[rx_index + 2];
+
+    if (cal_disable) 
+    {
+        bc_printf("Disable periodic SerDes calibration\n");
+
+        /* Disable the continuous calibration */
+        serdes_plat_cal_disable(TRUE);
+    }
+    else
+    {
+        bc_printf("Starting periodic SerDes calibration\n");
+
+        /* Restart the continuous calibration */
+        serdes_plat_cal_disable(FALSE);
+    }
+
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_CONT_SERDES_CAL_DISABLE_CMD_LEN);
+}
+
+/**
+* @brief
+*   Process the PRBS_CAL_STATUS_READ command reads the
+*   information stored during the PRBS calibration sequence.
+*   This includes the PRBS monitor detected lane bitmask and cal
+*   converged lane bitmask. Three reserved bytes are included
+*   for future use.
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_prbs_cal_status(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+    UINT8 pattmon_detected_bitmask = 0x00;
+    UINT8 cal_converged_bitmask = 0x00;
+    UINT8 reserved_byte_0 = 0x00;
+    UINT8 reserved_byte_1 = 0x00;
+    UINT8 reserved_byte_2 = 0x00;
+
+    /* Check that PRBS cal was run */
+    if (FALSE == ech_serdes_prbs_cal_state_get()) 
+    {
+        bc_printf("SerDes PRBS calibration must be run first\n");
+
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
+    }
+    else
+    {
+        ech_serdes_prbs_cal_data_get(&pattmon_detected_bitmask, &cal_converged_bitmask);
+
+        /* set status byte */
+        ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+    }
+
+    bc_printf("PRBS detected lane bitmask: 0x%02x, Cal converged lane bitmask: 0x%02x\n", pattmon_detected_bitmask, cal_converged_bitmask);
+
+    /* send the response */
+    ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_RSP_DATA_LEN;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = pattmon_detected_bitmask;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1] = cal_converged_bitmask;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 2] = reserved_byte_0;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 3] = reserved_byte_1;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 4] = reserved_byte_2;
+
+    twi_slv_data_put(port_id,
+                     ech_twi_tx_buf,
+                     EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_RSP_LEN);
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_CMD_LEN);
+}
+
+/**
+* @brief
+*   Process the READ_ACTIVE_LOGS command
+*   Reads the active log from ram and passes it back over the
+*   TWI interface in pieces. Indicates to the host through the
+*   log_continues variable if there is more log to be read.
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_read_active_logs(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+
+    UINT32 bytes_copied;
+    UINT8 log_continues;
+
+    void*  ccb_log_ptr;
+    void*  ccb_ctrl_ptr;
+
+    /* Only the runtime log can be read */
+    UINT8 channel_id = CHAR_IO_CHANNEL_ID_RUNTIME;
+
+    /* get the CCB control pointer */
+    char_io_loc_buffer_info_get(channel_id, &ccb_log_ptr);
+    ccb_ctrl_ptr = char_io_ccb_ctrl_get(channel_id);
+
+    if (NULL == ccb_log_ptr)
+    {
+        /* no active log defined */
+        bc_printf("Error: No active log defined\n");
+
+        bytes_copied = 0;
+        log_continues = 0;
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
+    }
+    else
+    {
+        /* Copy data from the log to the TWI buffer */
+        bytes_copied = ccb_get(ccb_ctrl_ptr, (CHAR*) (&ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1]), EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_DATA_LEN);
+
+        /* Check if there is more to be sent */
+        (bytes_copied < EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_DATA_LEN) ? (log_continues = 0) : (log_continues = 1);
+
+        ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+    }
+
+    /* send the response */
+    ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = bytes_copied + 1;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = log_continues;
+
+    twi_slv_data_put(port_id,
+                     ech_twi_tx_buf,
+                     EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_LEN);
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_CMD_LEN);
+}
+
+/**
+* @brief
+*   Process the EXP_FW_READ_SAVED_DDR_PARAMS command
+*   Reads the DDR parameters saved in flash and passes them
+*   over the TWI interface in pieces. Indicates to the host
+*   through the data_continues variable if there is more data to
+*   be read.
+* @param [in] rx_buf_ptr  - received data to process  
+* @param [in] rx_index - index in buffer of start of received
+*                command
+* @param [in] port_id - TWI port ID
+* @return
+*   nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_read_saved_ddr_params(UINT8* rx_buf_ptr, UINT32 rx_index, UINT32 port_id)
+{
+#if (EXPLORER_DDR_TRAIN_PARMS_SAVE_DISABLE == 0)
+    UINT32 bytes_copied;
+    UINT8 data_continues;
+
+    UINT8 start_read = rx_buf_ptr[rx_index + 2];
+
+    /* Reset the offset on the first read */
+    if (start_read) 
+    {
+        read_ddr_params_offset = 0;
+    }
+
+    /* Copy a section of the parameters to the rsp buffer */
+    UINT32 rc = app_fw_ddr_calibration_read(read_ddr_params_offset, 
+                                            EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_DATA_LEN, 
+                                            (VOID*) (&ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET + 1]), 
+                                            &bytes_copied);
+
+    if (PMC_SUCCESS == rc) 
+    {
+        /* Keep track of the last offset read */
+        (bytes_copied < EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_DATA_LEN) ? (data_continues = 0) : (data_continues = 1);
+
+        read_ddr_params_offset += bytes_copied;
+
+        ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
+    }
+    else
+    {
+        bytes_copied = 0;
+        data_continues = 0;
+
+        ech_twi_status_byte_set(EXP_TWI_ERROR);
+    }
+
+    ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = bytes_copied + 1;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = data_continues;
+
+#else
+    /*
+    ** set the status byte 
+    ** set the response data length to 1 (no data but 1 byte for data continues field)
+    ** set the data continues byte to zero as no more data is available
+    */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+    ech_twi_tx_buf[EXP_TWI_RSP_LEN_OFFSET] = 1;
+    ech_twi_tx_buf[EXP_TWI_RSP_DATA_OFFSET] = 0;
+
+#endif /* EXPLORER_DDR_TRAIN_PARMS_SAVE_DISABLE */
+
+    /* send the response */
+    twi_slv_data_put(port_id,
+                     ech_twi_tx_buf,
+                     EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_LEN);
+
+    /* increment receive buffer index */
+    ech_twi_rx_index_inc(EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_CMD_LEN);
 }
 
 /**
@@ -886,43 +1274,43 @@ PUBLIC VOID ech_twi_slave_proc(UINT32 port_id)
         return;
     }
 
-    if ((twi_activity & TWI_SLAVE_ACTIVITY_RX_REQ ) != TWI_SLAVE_ACTIVITY_RX_REQ) 
+    if ((twi_activity & TWI_SLAVE_ACTIVITY_RX_REQ ) != TWI_SLAVE_ACTIVITY_RX_REQ)
     {
         /*
         ** The following code handles a race condition where
         ** HOST I2C master is waiting for data bytes and the I2C command
         ** is lost from BOOTROM to APP FW transition. In this scenario
         ** the I2C state machine is stuck in RD request, causing clock
-        ** stretching in the I2C bus. To overcome this, the reasonable 
+        ** stretching in the I2C bus. To overcome this, the reasonable
         ** workaround is to send dummy data bytes(0xFF) to HOST till it
         ** satisfies the HOST command response length. After that, the
         ** dummy_data_send_flag is set to FALSE and FW will never send
         ** dummy bytes.
         */
-        if (dummy_data_send_flag == TRUE) 
+        if (dummy_data_send_flag == TRUE)
         {
             twi_port_dummy_data_send(port_id, (UINT8)ECH_TWI_DUMMY_DATA);
         }
         return;
     }
 
-    while((ech_twi_rx_len - ech_twi_rx_index) > 0)
+    while(ech_twi_rx_len > ech_twi_rx_index)
     {
         /*
         ** First check that the command is in valid range before accessing the array to find out desired command length.
         ** If controller has not received the full packet, just return and wait for further TWI_SLAVE_ACTIVITY_RX_REQ.
         ** The illegal / unsupported commands will be handled as a part of default case.
-        */ 
+        */
         if ((ech_twi_rx_buf[ech_twi_rx_index] < EXP_FW_TWI_CMD_MAX) &&
             (ech_twi_rx_len - ech_twi_rx_index) < ech_twi_cmd_len[ech_twi_rx_buf[ech_twi_rx_index]])
         {
             return;
         }
 
-        /* 
-        ** Store the in-process command so that proper command ID can be returned 
+        /*
+        ** Store the in-process command so that proper command ID can be returned
         ** for the FW STATUS command
-        */ 
+        */
         if(ech_twi_rx_buf[ech_twi_rx_index] != EXP_FW_TWI_CMD_STATUS )
         {
             ech_twi_command_id_set(ech_twi_rx_buf[ech_twi_rx_index]);
@@ -933,7 +1321,7 @@ PUBLIC VOID ech_twi_slave_proc(UINT32 port_id)
         ** for the lost command. So, reset dummy_data_send_flag.
         */
         dummy_data_send_flag = FALSE;
-        
+
         ech_twi_plat_slave_proc(port_id, ech_twi_rx_buf , ech_twi_rx_index);
 
         if ((ech_twi_rx_index != 0) &&
@@ -949,7 +1337,7 @@ PUBLIC VOID ech_twi_slave_proc(UINT32 port_id)
             ech_twi_rx_len = 0;
             ech_twi_rx_index = 0;
         }
-        
+
     } /* ech_twi_slave_proc() */
 }
 

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -43,10 +43,16 @@
 ** Constants
 */
 #define FW_VERSION_MAJOR_RELEASE_NUMBER         8
-#define FW_VERSION_MINOR_RELEASE_NUMBER         0
-#define FW_VERSION_CL_NUMBER                    384401
+#define FW_VERSION_MINOR_RELEASE_NUMBER         3
+#define FW_VERSION_CL_NUMBER                    439412
 #define FW_VERSION_PATCH_RELEASE_NUMBER         0
-#define FW_VERSION_BUILD_DATE                   0x04142020
+#define FW_VERSION_BUILD_DATE                   0x07302021
+
+/*
+** This can be used by the host to track changes in the FW API. It should be 
+** incremented each time a new API command is added or parameters are changed. 
+*/
+#define FW_API_VERSION_NUMBER                   6
 
 /*
 ** Macro Definitions
@@ -84,6 +90,8 @@ typedef struct
 
 #endif /* _FW_VERSION_INFO_H */
 /** @} end addtogroup */
+
+
 
 
 

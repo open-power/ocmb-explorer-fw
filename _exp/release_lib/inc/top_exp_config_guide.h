@@ -1,5 +1,5 @@
 /*******************************************************************************
-*  Copyright 2019 Microchip Technology Inc. and its subsidiaries.
+*  Copyright 2020 Microchip Technology Inc. and its subsidiaries.
 *  Subject to your compliance with these terms, you may use Microchip
 *  software and any derivatives exclusively with Microchip products. It is
 *  your responsibility to comply with third party license terms applicable to
@@ -22,15 +22,13 @@
 *     Generated register header file to be used by top_exp_config_guide.c.
 *     
 *     This file is generated from:
-*     EXPLORER_CNFG_GUIDE_pdox_r023-wrapper-adjusted.xlsx (pdox_r023)
+*     EXPLORER_CNFG_GUIDE_pdox_r030.xlsx (pdox_r030)
 *     using this command:
 *     
-*     python ConfigGuideConv.py
-*     -gEXPLORER_CNFG_GUIDE_pdox_r023_wrapper_adjusted.xlsx -rpdox_r023
-*     -pEXPLORER_CNFG_GUIDE_pdox_r023_wrapper_adjusted.parsed
-*     -nnamespace_exp_p_a_release_047.tcl -ctop_exp_config_guide.c
-*     -htop_exp_config_guide.h
-*     -idi_enable,di_disable,di_enable_foxhound,di_disable_foxhound,WCIMODE_WC,doorbell_interrupt_controls,deassert_serdes_reset,deassert_phy_ocmb_reset,DDLL
+*     python ConfigGuideConv.py -gEXPLORER_CNFG_GUIDE_pdox_r030.xlsx -rpdox_r030
+*     -pEXPLORER_CNFG_GUIDE_pdox_r030.parsed -nnamespace_exp_p_a_release_047.tcl
+*     -ctop_exp_config_guide.c -htop_exp_config_guide.h
+*     -iserdes_link_width_x4,serdes_link_width_x8,di_enable,di_disable,di_enable_foxhound,di_disable_foxhound,WCIMODE_WC,doorbell_interrupt_controls,deassert_serdes_reset,deassert_phy_ocmb_reset,DDLL
 *     -ftop_exp_cfg -a
 * 
 * 
@@ -56,6 +54,7 @@ EXTERN BOOL top_exp_cfg_WCIMODE_WC(UINT32 pcse_top_regs_base_addr,
                                    UINT32 wrapper_base_addr,
                                    UINT32 efuse_base_addr,
                                    UINT32 top_xcbi_base_addr);
+EXTERN BOOL top_exp_cfg_serdes_link_width_x8(UINT32 top_xcbi_base_addr);
 EXTERN BOOL top_exp_cfg_di_disable(UINT32 top_xcbi_base_addr,
                                    UINT32 gpbc_sys_xcbi_base_addr,
                                    UINT32 gpbc_peri_xcbi_base_addr,
@@ -67,6 +66,7 @@ EXTERN BOOL top_exp_cfg_deassert_serdes_reset(UINT32 top_xcbi_base_addr);
 EXTERN BOOL top_exp_cfg_assert_serdes_reset(UINT32 top_xcbi_base_addr);
 EXTERN BOOL top_exp_cfg_DDLL(UINT32 dll_base_addr,
                              UINT32 top_xcbi_base_addr);
+EXTERN BOOL top_exp_cfg_serdes_link_width_x4(UINT32 top_xcbi_base_addr);
 EXTERN BOOL top_exp_cfg_di_disable_foxhound(UINT32 diag_pcbi_base_addr,
                                             UINT32 adsp_pcbi_base_addr,
                                             UINT32 mdsp_pcbi_base_addr,

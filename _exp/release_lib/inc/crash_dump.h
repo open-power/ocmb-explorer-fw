@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -34,9 +34,9 @@
 ** Constants
 */
 
-#define SECTION_NAME_LEN 30
+#define SECTION_NAME_LEN        32
 #define NUM_CRASH_DUMP_HANDLERS 10
-#define CRASH_DUMP_HEADER_KEY 0xC7544EAD
+#define CRASH_DUMP_HEADER_KEY   0xC7544EAD
 
 /*
 ** Macro definitions
@@ -77,12 +77,31 @@
 #define CRASH_DUMP_ERR_GET_SPI_OVERFLOW           CRASH_DUMP_ERR_CODE_CREATE(0x00B)
 #define CRASH_DUMP_ERR_CRASH_DUMP_A_ADDR_ALIGN    CRASH_DUMP_ERR_CODE_CREATE(0x00C)
 #define CRASH_DUMP_ERR_CRASH_DUMP_B_ADDR_ALIGN    CRASH_DUMP_ERR_CODE_CREATE(0x00D)
+#define CRASH_DUMP_ERR_SPI_DEV_INFO_GET_ERR       CRASH_DUMP_ERR_CODE_CREATE(0x00E)
 
 /*
 ** Type declarations
 */
 
 typedef void crash_dump_function_ptr(void);
+
+
+/**
+* @brief Enumerated crash dump sets 
+*  
+* @note 
+*   CANNOT exceed more than 4 crash dump sets because the CD
+*   flash partition is 256KB in size and each CD set can support
+*   a maximium of 64KB.
+*/
+typedef enum
+{
+    CRASH_DUMP_SET_0,
+    CRASH_DUMP_SET_1,
+    CRASH_DUMP_SET_2,
+    CRASH_DUMP_SET_3,
+    CRASH_DUMP_SET_ID_MAX
+} crash_dump_set_id_enum;
 
 /**
 * @brief Enumerated type of the cash dump types
@@ -119,7 +138,9 @@ typedef struct crash_dump_header
     UINT32 type;                  /**< Type of data for the crash dump */
     UINT32 start_offset;          /**< Crash dump data start offset into crash dump data section */
     UINT32 size;                  /**< Size of the crash dump data for this section */
+    UINT32 reserved[4];           /**< Align to exactly 2 cache lines for easier writing to ECC enabled flash. */  
 } crash_dump_header;
+
 
 /*
 ** Function Prototypes
@@ -127,7 +148,11 @@ typedef struct crash_dump_header
 
 EXTERN void crash_dump_init(void);
 EXTERN void crash_dump_put(UINT32 buffer_size, void *src_buffer_ptr);
-EXTERN PMCFW_ERROR crash_dump_register(char *name, crash_dump_function_ptr *dump_fcn, crash_dump_type type, UINT32 dump_size);
+EXTERN PMCFW_ERROR crash_dump_register(crash_dump_set_id_enum cd_set_id, 
+                                       char *name, 
+                                       crash_dump_function_ptr *dump_fcn, 
+                                       crash_dump_type type, 
+                                       UINT32 dump_size);
 EXTERN void crash_dump_to_rom(void);
 EXTERN void crash_dump_print(void);
 

@@ -93,6 +93,17 @@ typedef enum
 ** Macro Definitions
 */
 
+/* TWI switch channels for the PCA9548ABS */
+#define TWI_SWITCH_CHANNEL_ID_0 0
+#define TWI_SWITCH_CHANNEL_ID_1 1
+#define TWI_SWITCH_CHANNEL_ID_2 2
+#define TWI_SWITCH_CHANNEL_ID_3 3
+#define TWI_SWITCH_CHANNEL_ID_4 4
+#define TWI_SWITCH_CHANNEL_ID_5 5
+#define TWI_SWITCH_CHANNEL_ID_6 6
+#define TWI_SWITCH_CHANNEL_ID_7 7
+
+
 /*
 ** Structures and Unions
 */
@@ -114,6 +125,8 @@ EXTERN PMCFW_ERROR temp_sensor_driver_plat_onchip_read(UINT8   twi_addr,
                                                        UINT8   twi_reg_data_length,
                                                        UINT16* value_ptr);
 EXTERN PMCFW_ERROR temp_sensor_driver_plat_jedec_read(UINT8 twi_addr, UINT8 reg_addr, UINT8 register_read_len, UINT8* value_ptr);
+EXTERN PMCFW_ERROR temp_sensor_driver_twi_expander_enable(UINT32 twi_expander_channel);
+EXTERN PMCFW_ERROR temp_sensor_driver_twi_expander_disable(UINT32 twi_expander_channel);
 
 #endif /* _TEMP_SENSOR_DRIVER_PLAT_H */
 

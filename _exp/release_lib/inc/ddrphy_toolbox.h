@@ -1,7 +1,7 @@
 /********************************************************************************                                                                             
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -65,7 +65,7 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
     #define MSDG_MAX_PSTATE 1
 #endif
 
-#define VERSION_NUM_INPUT_MSDG 2
+#define VERSION_NUM_INPUT_MSDG 3
 #define VERSION_NUM_RESP_MSDG 1
 
 #define JEDEC_T_WRITE_RECOVERY 15000
@@ -90,7 +90,11 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
 #endif
 #endif
 
-#define DDR_ERR_GEN_BAD_PTR                     DDR_ERR_CODE_CREATE(0x000)
+/* 
+** modified the first entry to the next unused value as the #define conflicted
+** with line 82 which resolves to 0x0000_9000 
+*/ 
+#define DDR_ERR_GEN_BAD_PTR                     DDR_ERR_CODE_CREATE(0x015)
 #define DDR_ERR_GEN_DIV_ZERO                    DDR_ERR_CODE_CREATE(0x001)
 #define DDR_ERR_GEN_TIMEOUT                     DDR_ERR_CODE_CREATE(0x002)
 #define DDR_ERR_GEN_FREQ_SUPP                   DDR_ERR_CODE_CREATE(0x003)
@@ -122,6 +126,8 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
 #define DDR_ERR_PHY_REG_RANGE_ERROR             DDR_ERR_CODE_CREATE(0x054)
 #define DDR_ERR_PHY_INLD_TWR                    DDR_ERR_CODE_CREATE(0x055)
 #define DDR_ERR_PHY_MRLTRAINING                 DDR_ERR_CODE_CREATE(0x056)
+#define DDR_ERR_PHY_TRAIN_FW_COMPLETE           DDR_ERR_CODE_CREATE(0x057)
+#define DDR_ERR_PHY_UNSUPP_MAJOR_MSG            DDR_ERR_CODE_CREATE(0x058)
 
 #define DDR_ERR_SEQ_INVLD_PVT_TRIGGER           DDR_ERR_CODE_CREATE(0x061)
 
@@ -638,6 +644,14 @@ typedef __packed struct user_input_msdg {
                                                 //ATxDly_A/B[5]: ADDR[12],ADDR[3],ADDR[4],ADDR[0]
                                                 //ATxDly_A/B[6]: CKE[0],ADDR[15],ACT_N,ADDR[10]
                                                 //ATxDly_A/B[7]: ADDR[11],ADDR[6],BA[1],ADDR[14]
+
+    uint8_t F1RC1x;     // RCD control word F1RC1x. only available for RDIMM.
+    uint8_t F1RC2x;     // RCD control word F1RC2x. only available for RDIMM.
+    uint8_t F1RC3x;     // RCD control word F1RC3x. only available for RDIMM.
+    uint8_t F1RC4x;     // RCD control word F1RC4x. only available for RDIMM.
+    uint8_t F1RC5x;     // RCD control word F1RC5x. only available for RDIMM.
+    uint8_t F1RC6x;     // RCD control word F1RC6x. only available for RDIMM.
+    uint8_t F1RC7x;     // RCD control word F1RC7x. only available for RDIMM.
 } user_input_msdg_t;
 
 typedef enum {
@@ -742,6 +756,23 @@ typedef __packed struct user_response_timing_msdg {
     int8_t   CDD_WR[4][4];      // CDD_WR[n][m]This is a signed integer value. Write to read critical delay difference from cs n to cs m
 } user_response_timing_msdg_t;
 
+typedef enum user_response_error {
+    DDRPHY_TRAIN_NO_ERROR                  = 0x0,
+    DDRPHY_TRAIN_DEVINIT_ERR               = 0x1,
+    DDRPHY_TRAIN_RX_ENABLE_ERR             = 0x2,
+    DDRPHY_TRAIN_FINE_WRITE_LEVELING_ERR   = 0x3,
+    DDRPHY_TRAIN_READ_DESKEW_ERR           = 0x4,
+    DDRPHY_TRAIN_READ_1D_SI_FRIENDLY_ERR   = 0x5,
+    DDRPHY_TRAIN_COURSE_WRITE_LEVELING_ERR = 0x6,
+    DDRPHY_TRAIN_WRITE_1D_ERR              = 0x7,
+    DDRPHY_TRAIN_READ_1D_ERR               = 0x8,
+    DDRPHY_TRAIN_DFIMRL_DDRCLK_ERR         = 0x9,
+    DDRPHY_TRAIN_ASSOCIATED_RANK_ERR       = 0xA,
+    /* 0xB -> 0xF Reserved */
+    /* WARNING: This enum cannot expand past 4 bits in width */
+    DDRPHY_TRAIN_ERR_RESPONSE_MAX_VALUE    = 0xF
+} user_response_error_e;
+
 #ifdef PMC_DDR_SIM_DPI
 typedef struct user_response_error_msdg {
 #else
@@ -760,7 +791,8 @@ typedef __packed struct user_response_error_msdg {
     //0x7: Write 1D Training Error
     //0x8: Read 1D Training Error
     //0x9: DFIMRL_DDRCLK Training Error
-    //0xa~0xF: Reserved
+    //0xA: Associated Rank Training Error
+    //0xB~0xF: Reserved
 } user_response_error_msdg_t;
 
 #ifdef PMC_DDR_SIM_DPI

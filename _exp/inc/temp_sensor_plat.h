@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -62,9 +62,6 @@
 */
 #define TEMP_ERR_CODE_CREATE(err_suffix)            ((PMCFW_ERR_BASE_TEMP) | (err_suffix))
 #define TEMP_ERR_SWITCH_CHANNEL_ID_INVALID          TEMP_ERR_CODE_CREATE(0x001)
-#define TEMP_ERR_FW_MANAGED_UNSUPPORTED             TEMP_ERR_CODE_CREATE(0x010)
-#define TEMP_ERR_ONCHIP_REG_READ_LEN_UNSUPPORTED    TEMP_ERR_CODE_CREATE(0x011)
-#define TEMP_ERR_ONCHIP_NUM_REG_READ_OP_UNSUPPORTED TEMP_ERR_CODE_CREATE(0x012)
 
 /*
 ** Macro Definitions
@@ -83,7 +80,7 @@
 */
 
 
-EXTERN VOID temp_sensor_plat_init(VOID);
+EXTERN PMCFW_ERROR temp_sensor_plat_init(VOID);
 EXTERN VOID temp_sensor_plat_update(VOID);
 
 

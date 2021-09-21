@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -129,6 +129,7 @@ EXTERN unsigned top_device_rev_absolute(VOID);
 EXTERN BOOL top_efuse_bootstrap_spi_reset_en(VOID);
 EXTERN BOOL top_efuse_spi_ecc_enable_get(VOID);
 EXTERN UINT32 top_efuse_spi_rate_get(VOID);
+EXTERN UINT32 top_efuse_revision_id_get(VOID);
 EXTERN UINT8 top_bootstrap_twi_il_addr_get(VOID);
 EXTERN VOID top_device_reset(VOID);
 EXTERN BOOL top_public_key_valid(UINT32 key_id);
@@ -142,9 +143,13 @@ EXTERN UINT32 top_efuse_twi_pin_driver_strength_get(VOID);
 EXTERN void top_ddr_phy_reset(BOOL do_reset);
 EXTERN VOID top_ram_code_ptr_adjust(UINT32 offset);
 EXTERN VOID top_fatal_error_handler(void);
+EXTERN VOID top_fatal_init(void);
+EXTERN VOID top_non_fatal_error_handler(void);
+EXTERN VOID top_non_fatal_init(void);
 EXTERN UINT32 top_twi_pin_default_driver_strength_get(void);
 EXTERN void top_twi_driver_strength_set(UINT32 value);
 EXTERN void top_di_enable(void);
+EXTERN VOID top_fail_n_error_handler(void);
 
 #endif /* _TOP_H */
 /** @} end addtogroup */

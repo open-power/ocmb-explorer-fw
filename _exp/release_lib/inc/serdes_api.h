@@ -71,5 +71,7 @@ EXTERN VOID serdes_api_ffe_prepost_settings_read(UINT32 lane_offset,
                                                  UINT32* tx_p3a_d1en_ptr,
                                                  UINT32* tx_p2b_pten_ptr,
                                                  UINT32* tx_p1b_pten_ptr);
+EXTERN UINT32 serdes_api_fuse_val_stat_1_read(VOID);
+EXTERN VOID serdes_api_lane_invert_set(UINT32 lane_offset);
 
 #endif /* _SERDES_API_H */

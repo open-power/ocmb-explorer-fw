@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -33,6 +33,7 @@
 #include "pmcfw_err.h"
 #include "exp_api.h"
 #include "ech.h"
+#include "ech_twi_common.h"
 #include "twi_api.h"
 #include "pmc_hw_base.h"
 #include "top_exp_config_guide.h"
@@ -40,10 +41,11 @@
 #include <string.h>
 #include "serdes_plat.h"
 #include "ddr_phy.h"
-#include "ech_loc.h"
 #include "ocmb_config_guide.h"
 #include "ocmb_config_guide_mchp.h"
 #include "app_fw.h"
+#include "top_plat.h"
+#include "opsw_timer.h"
 
 /*
 * Local Enumerated Types
@@ -106,6 +108,12 @@ PRIVATE exp_pqm_prbs_error_count_struct ech_pqm_err;
 PRIVATE exp_pqm_horz_bt_struct horz_bt;
 PRIVATE exp_pqm_vert_bt_struct vert_bt;
 
+PRIVATE UINT_TIME prbs_err_count_last_reset;
+PRIVATE UINT32 prbs_err_count_last_reset_s;
+
+/* Product Qualification Mode */
+PRIVATE BOOL ech_pqm_mode = FALSE;
+
 /*
 ** Private Functions
 */
@@ -138,6 +146,8 @@ PRIVATE VOID ech_pqm_lane_set(UINT8* rx_buf_ptr, UINT32 rx_index)
         /* unsupported lane configuration */
         bc_printf("ERROR: PQM lane_set unsupported lane configuration %d\n",
             rx_buf_ptr[rx_index + ECH_PQM_LANE_SET_DATA_OFFSET]);
+
+        /* set status byte */
         ech_twi_status_byte_set(EXP_SERDES_LANE_UNSUPPORTED);
     }
     else 
@@ -158,6 +168,8 @@ PRIVATE VOID ech_pqm_lane_set(UINT8* rx_buf_ptr, UINT32 rx_index)
         }
 
         bc_printf("INFO: PQM lane_set lane = %d\n", ech_pqm_cfg.lanes);
+
+        /* set status byte */
         ech_twi_status_byte_set(EXP_TWI_SUCCESS);
     }
 
@@ -219,7 +231,9 @@ PRIVATE VOID ech_pqm_freq_set(UINT8* rx_buf_ptr, UINT32 rx_index)
     {
         /* unsupported frequency configuration */
         bc_printf("ERROR: PQM freq set unsupported frequency configuration %d\n",
-            rx_buf_ptr[rx_index + ECH_PQM_FREQ_SET_DATA_OFFSET]);
+        rx_buf_ptr[rx_index + ECH_PQM_FREQ_SET_DATA_OFFSET]);
+
+        /* set status byte */
         ech_twi_status_byte_set(EXP_SERDES_FREQ_NA);
     }
     else
@@ -227,6 +241,8 @@ PRIVATE VOID ech_pqm_freq_set(UINT8* rx_buf_ptr, UINT32 rx_index)
         /* record the lane configuration */
         ech_pqm_cfg.freq = rx_buf_ptr[rx_index + ECH_PQM_LANE_SET_DATA_OFFSET];
         bc_printf("INFO: PQM freq set freq = %d\n", ech_pqm_cfg.freq);
+
+        /* set status byte */
         ech_twi_status_byte_set(EXP_TWI_SUCCESS);
     }
 
@@ -323,25 +339,34 @@ PRIVATE UINT32 ech_pqm_lane_training(UINT8* rx_buf_ptr, UINT32 rx_index)
         }
         else if (step == 1)
         {
-            if ( !ocmb_cfg_RxPatAorB(OCMB_REGS_BASE_ADDR, ech_pqm_cfg.lane_rx_pattern_bitmask) )
+            /* get lane bitmask, w/o lane 4 (internal clock) if in x4 mode */
+            UINT8 active_lane_bitmask = ech_lane_cfg_pattern_bitmask_get();
+
+            if ( !ocmb_cfg_RxPatAorB(OCMB_REGS_BASE_ADDR, &active_lane_bitmask))
             {                        
                 bc_printf("[ERROR] Cannot find pattern A or B\n");  
                 ech_extended_error_code_set(EXP_TWI_BOOT_CFG_DLX_CONFIG_PATTERN_A_B_FAILED);
-                return EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK;
+                return EXP_TWI_BOOT_CFG_DLX_PAT_A_B_FAIL_BITMASK;
             }
-            
-            bc_printf("TWI_BOOT_CONFIG: Found Rx Pattern A or B\n");
-            
+
+            bc_printf("TWI_BOOT_CONFIG: Found Rx Pattern A or B on lanes = 0x%02X\n", active_lane_bitmask);
+
             /* Call following function to support lane inversion */
-            rc =  serdes_plat_lane_inversion_config(ech_lane_cfg_bitmask_get(), ech_lane_cfg_pattern_bitmask_get());
+            rc =  serdes_plat_lane_inversion_config(ech_lane_cfg_bitmask_get(), &active_lane_bitmask);
             if (rc != PMC_SUCCESS)
             {        
                 bc_printf("TWI_BOOT_CONFIG:  serdes_plat_lane_inversion_config: ERR!!! rc=0x%x\n",rc);            
                 ech_extended_error_code_set(rc);
                 return EXP_TWI_BOOT_CFG_SERDES_LANE_INVERSION_CONFIG_FAIL_BITMSK;        
             }
+
+            /* 
+            ** record the lanes that successfully trained 
+            ** may differ from configured lanes if operating in degraded mode 
+            */ 
+            ech_lane_active_pattern_bitmask_set(active_lane_bitmask);
             
-            rc = serdes_plat_adapt_step1(ech_dfe_state_get(),ech_adaptation_state_get(), ech_lane_cfg_bitmask_get());
+            rc = serdes_plat_adapt_step1(ech_dfe_state_get(),ech_adaptation_state_get(), ech_lane_cfg_bitmask_get(), FALSE);
             
             if (rc != PMC_SUCCESS)
             {            
@@ -350,18 +375,28 @@ PRIVATE UINT32 ech_pqm_lane_training(UINT8* rx_buf_ptr, UINT32 rx_index)
                 return EXP_TWI_BOOT_CFG_SERDES_INIT_FAIL_BITMASK;        
             }
             
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_lock_struct lock_struct;
+            top_plat_critical_region_enter(&lock_struct); 
+
             /* apply OCMB DL reset */
             if (FALSE == ocmb_cfg_DLx_config_FW(OCMB_REGS_BASE_ADDR))
             {
                 /* DLx Config FW failed */
                 ech_extended_error_code_set(EXP_TWI_BOOT_CFG_DLX_CONFIG_FW_FAILED);
                 bc_printf("[ERROR] OCMB DLx_config_FW FAILED\n");
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
+
                 /* exit */
                 return EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK;
             }
             
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct); 
+                
             rc = serdes_plat_adapt_step2(ech_dfe_state_get(), ech_adaptation_state_get(), ech_lane_cfg_bitmask_get());
-            
             if (rc != PMC_SUCCESS)
             {            
                 bc_printf("TWI_BOOT_CONFIG: serdes_plat_adapt_step2: ERR!!! rc=0x%x\n",rc);            
@@ -395,7 +430,10 @@ PRIVATE VOID ech_pqm_training_reset(UINT8* rx_buf_ptr, UINT32 rx_index)
 
     top_exp_cfg_assert_serdes_reset(TOP_XCBI_BASE_ADDR);
 
-    bc_printf("INFO: PQM reset lane trainning\n");
+    bc_printf("INFO: PQM reset lane training\n");
+
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
 
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_LANE_RETRAIN_CMD_LEN);
@@ -471,6 +509,9 @@ PRIVATE VOID ech_pqm_rx_adapatation_obj_read(UINT8* rx_buf_ptr, UINT32 rx_index)
                      tx_buf_ptr,                 
                      EXP_TWI_PQM_RX_ADAPT_OBJ_READ_RSP_LEN);
 
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_RX_ADAPAT_OBJ_READ_CMD_LEN);
 }
@@ -544,6 +585,9 @@ PRIVATE VOID ech_pqm_rx_calibration_value_read(UINT8* rx_buf_ptr, UINT32 rx_inde
                      tx_buf_ptr,                 
                      EXP_TWI_PQM_RX_CALIB_VALUE_READ_RSP_LEN);
 
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_RX_CALIB_VALUE_READ_CMD_LEN);
 }
@@ -607,7 +651,7 @@ PRIVATE VOID ech_pqm_csu_calibration_value_status_read(UINT8* rx_buf_ptr, UINT32
     /* copy the data to the transmit buffer */
     memcpy((VOID*)&tx_buf_ptr[EXP_TWI_RSP_DATA_OFFSET],
             (VOID*)&ech_pqm_data.csu_calib, 
-            sizeof(exp_pqm_rx_adapt_obj_struct));
+            sizeof(exp_pqm_csu_calib_value_status_struct));
 
     bc_printf("INFO: PQM csu_calibration_value_status_read sending %d Bytes to HOST\n",
         tx_buf_ptr[EXP_TWI_RSP_LEN_OFFSET]);
@@ -616,6 +660,9 @@ PRIVATE VOID ech_pqm_csu_calibration_value_status_read(UINT8* rx_buf_ptr, UINT32
     twi_slv_data_put(EXP_TWI_SLAVE_PORT,
                      tx_buf_ptr,                 
                      EXP_TWI_PQM_CSU_CALIB_VALUE_STATUS_READ_RSP_LEN);
+
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
 
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_CSU_CALIB_VALUE_STATUS_READ_CMD_LEN);
@@ -865,14 +912,14 @@ PRIVATE VOID ech_pqm_prbs_generator_control(UINT8* rx_buf_ptr, UINT32 rx_index)
 */
 PRIVATE UINT32 ech_pqm_prbs_err_count_start(UINT8* rx_buf_ptr, UINT32 rx_index)
 {
-    if ((ech_pqm_cfg.lanes != EXP_SERDES_1_LANE) &&
-        (ech_pqm_cfg.lanes != EXP_SERDES_4_LANE) &&
-        (ech_pqm_cfg.lanes != EXP_SERDES_8_LANE))
-    {
-        /* invalid lane configuration */
-        bc_printf("ERROR: PRBS error count start invalid lane configuration %d\n", ech_pqm_cfg.lanes);
-        return EXP_SERDES_LANE_UNSUPPORTED;
-    }
+    UINT32 wraps;
+    UINT32 approx_wraps;
+    UINT32 wrap_ms;
+    UINT32 temp_diff_ms;
+    UINT32 temp_diff_s;
+
+    ech_pqm_cfg.lanes = SERDES_LANES;
+    ech_pqm_cfg.lane_bitmask = ech_lane_cfg_bitmask_get();
 
     /* read the error count across supported lanes */
     for (UINT32 i = 0; i < ech_pqm_cfg.lanes; i++)
@@ -887,6 +934,44 @@ PRIVATE UINT32 ech_pqm_prbs_err_count_start(UINT8* rx_buf_ptr, UINT32 rx_index)
         }
     }
 
+    /* Record the time difference from the last time the PRBS monitors were read */
+
+    /* Calculate the ms for the 32 bit timer to wrap */
+    wrap_ms = sys_timer_count_to_us(UINT32_MAX / 1000) / 2;
+
+    /* Since there are no spare timers to set to ms, use the system timer and OPSW timer 0 in seconds */
+    temp_diff_ms = sys_timer_count_to_us(sys_timer_diff(prbs_err_count_last_reset, sys_timer_read())) / 1000;
+    temp_diff_s = opsw_timer0_read() - prbs_err_count_last_reset_s;
+    
+    /* 
+    ** Calculate the number of wraps of the timer that occurred 
+    ** temp_diff_ms + wraps * wrap_ms ~= temp_diff_s
+    */
+    if (temp_diff_s * 1000 > temp_diff_ms)
+    {
+        approx_wraps = (temp_diff_s * 1000 - temp_diff_ms) / wrap_ms;
+    }
+    else
+    {
+        approx_wraps = (temp_diff_ms - temp_diff_s * 1000) / wrap_ms;
+    }
+
+    if ((temp_diff_ms + approx_wraps * wrap_ms) - temp_diff_s * 1000 > (wrap_ms / 2) &&
+            temp_diff_s * 1000 - (temp_diff_ms + approx_wraps * wrap_ms) > (wrap_ms / 2)) 
+    {
+        wraps = approx_wraps + 1;
+    }
+    else
+    {
+        wraps = approx_wraps;
+    }
+
+    ech_pqm_err.time_diff_ms = temp_diff_ms + wraps * wrap_ms;
+
+    /* Record the timer values for the next measurement */
+    prbs_err_count_last_reset = sys_timer_read();
+    prbs_err_count_last_reset_s = opsw_timer0_read();
+
     bc_printf("INFO: Read PRBS error count for lanes: ");
     for (UINT32 i = 0; i < ech_pqm_cfg.lanes; i++)
     {
@@ -896,6 +981,7 @@ PRIVATE UINT32 ech_pqm_prbs_err_count_start(UINT8* rx_buf_ptr, UINT32 rx_index)
         }
     }
     bc_printf("\n");
+    bc_printf("Measurement time: %lu ms\n", ech_pqm_err.time_diff_ms);
 
     return EXP_TWI_SUCCESS;
 }
@@ -915,23 +1001,13 @@ PRIVATE UINT32 ech_pqm_prbs_err_count_start(UINT8* rx_buf_ptr, UINT32 rx_index)
 */
 PRIVATE VOID ech_pqm_prbs_err_count_read(UINT8* rx_buf_ptr, UINT32 rx_index)
 {
-    if ((ech_pqm_cfg.lanes != EXP_SERDES_1_LANE) &&
-        (ech_pqm_cfg.lanes != EXP_SERDES_4_LANE) &&
-        (ech_pqm_cfg.lanes != EXP_SERDES_8_LANE))
-    {
-        bc_printf("ERROR: PRBS error count read invalid lane configuration %d, do not send any response\n", ech_pqm_cfg.lanes);
-        
-        ech_twi_status_byte_set(EXP_SERDES_LANE_UNSUPPORTED);
-        
-        /* increment the received buffer index */
-        ech_twi_rx_index_inc(EXP_TWI_PQM_PRBS_ERR_COUNT_READ_CMD_LEN);
-        return;
-    }
-    
+    ech_pqm_cfg.lanes = SERDES_LANES;
+    ech_pqm_cfg.lane_bitmask = ech_lane_cfg_bitmask_get(); 
+
     UINT8* tx_buf_ptr = ech_twi_tx_buf_get();
 
     /* set the response length */
-    tx_buf_ptr[EXP_TWI_RSP_LEN_OFFSET] = ech_pqm_cfg.lanes * sizeof(UINT32);
+    tx_buf_ptr[EXP_TWI_RSP_LEN_OFFSET] = ech_pqm_cfg.lanes * sizeof(UINT32) + 1 * sizeof(UINT32);
     /*bc_printf("INFO: PRBS error count before memcpy, ech_pqm_cfg.lanes=%d, size byte=%d\n",
         ech_pqm_cfg.lanes, ech_pqm_cfg.lanes * sizeof(UINT32));*/
 
@@ -949,6 +1025,9 @@ PRIVATE VOID ech_pqm_prbs_err_count_read(UINT8* rx_buf_ptr, UINT32 rx_index)
     twi_slv_data_put(EXP_TWI_SLAVE_PORT,
                      tx_buf_ptr,                 
                      EXP_TWI_PQM_PRBS_ERR_COUNT_READ_RSP_LEN);
+
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
 
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_PRBS_ERR_COUNT_READ_CMD_LEN);
@@ -1053,6 +1132,9 @@ PRIVATE VOID ech_pqm_horizontal_bathtub_get_read(UINT8* rx_buf_ptr, UINT32 rx_in
                         tx_buf_ptr,                 
                         EXP_TWI_PQM_HORZ_BATHTUB_GET_RSP_LEN);
 
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_HORZ_BATHTUB_GET_READ_CMD_LEN);
 }
@@ -1150,6 +1232,9 @@ PRIVATE VOID ech_pqm_vertical_bathtub_get_read(UINT8* rx_buf_ptr, UINT32 rx_inde
     /* send the response */
     twi_slv_data_put(EXP_TWI_SLAVE_PORT, tx_buf_ptr, EXP_TWI_PQM_VERT_BATHTUB_GET_RSP_LEN);
 
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_VERT_BATHTUB_GET_READ_CMD_LEN);
 }
@@ -1212,7 +1297,7 @@ PRIVATE UINT32 ech_pqm_2d_bathtub_get_start(UINT8* rx_buf_ptr, UINT32 rx_index)
     {
         /* hardware error */
         bc_printf("ERROR: 2D Bathtub capture returned HW error \n");
-        return EXP_VERT_BATHTUB_FAILURE;
+        return EXP_2D_BATHTUB_FAILURE;
     }
 
     return EXP_TWI_SUCCESS;
@@ -1251,8 +1336,46 @@ PRIVATE VOID ech_pqm_2d_bathtub_get_read(UINT8* rx_buf_ptr, UINT32 rx_index)
                     tx_buf_ptr,                 
                     EXP_TWI_PQM_VERT_BATHTUB_GET_RSP_LEN);
 
+    /* set status byte */
+    ech_twi_status_byte_set(EXP_TWI_SUCCESS);
+
     /* increment the received buffer index */
     ech_twi_rx_index_inc(EXP_TWI_PQM_TWOD_BATHTUB_GET_READ_CMD_LEN);
+}
+
+
+/*
+** Public Functions
+*/
+
+/**
+* @brief
+*   Get the PQM enable/disable setting
+*   
+* @return
+*   The PQM enable (TRUE) or disable (FALSE) status
+*
+* @note
+*/
+PUBLIC BOOL ech_twi_pqm_get(VOID)
+{
+    return (ech_pqm_mode);
+}
+
+/**
+* @brief
+*   Set the Product Qualification Mode
+* 
+* @param[in] setting - TRUE to enable PQM, FALSE to disable PQM
+*  
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_pqm_set(BOOL setting)
+{
+    ech_pqm_mode = setting;
 }
 
 /**
@@ -1270,7 +1393,6 @@ PRIVATE VOID ech_pqm_2d_bathtub_get_read(UINT8* rx_buf_ptr, UINT32 rx_index)
 * @note
 */
 PUBLIC UINT32 ech_pqm_force_delay_line_update(UINT8* rx_buf_ptr, UINT32 rx_index)
-
 {
     ddr_bist_setup_t bistSetup;
     UINT32 status = ddrBistInit(0, &bistSetup);
@@ -1278,8 +1400,11 @@ PUBLIC UINT32 ech_pqm_force_delay_line_update(UINT8* rx_buf_ptr, UINT32 rx_index
     if(status != PMC_SUCCESS)
     {
         bc_printf("INFO: PQM cannot initialize BIST mode, status = 0x%08x\n", status);
+
         /* Set the extended error code*/
         ech_extended_error_code_set(status);
+
+        /* return value */
         return EXP_TWI_ERROR;
     }
 
@@ -1310,12 +1435,6 @@ PUBLIC UINT32 ech_pqm_force_delay_line_update(UINT8* rx_buf_ptr, UINT32 rx_index
 
     return EXP_TWI_SUCCESS;
 }
-
-
-
-/*
-** Public Functions
-*/
 
 /**
 * @brief
@@ -1363,11 +1482,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_LANE_TRAIN_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_LANE_TRAINING,
-                &ech_pqm_lane_training, 
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_LANE_TRAIN_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_lane_training, 
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_LANE_TRAIN_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1382,11 +1501,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_RX_ADAPAT_OBJ_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_RX_ADAPTATION_OBJ_START,
-                &ech_pqm_rx_adapatation_obj_start, 
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_RX_ADAPAT_OBJ_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_rx_adapatation_obj_start, 
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_RX_ADAPAT_OBJ_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1401,11 +1520,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_RX_CALIB_VALUE_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_RX_CALIBRATION_VALUE_START,
-                &ech_pqm_rx_calibration_value_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_RX_CALIB_VALUE_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_rx_calibration_value_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_RX_CALIB_VALUE_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1420,11 +1539,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_CSU_CALIB_VALUE_STATUS_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_CSU_CALIBRATION_VALUE_STATUS_START,
-                &ech_pqm_csu_calibration_value_status_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_CSU_CALIB_VALUE_STATUS_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_csu_calibration_value_status_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_CSU_CALIB_VALUE_STATUS_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1445,11 +1564,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_PRBS_USER_PATTERN_SET_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_PRBS_USER_DEFINED_PATTERN_SET,
-                &ech_pqm_prbs_user_defined_pattern_set,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_PRBS_USER_PATTERN_SET_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_prbs_user_defined_pattern_set,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_PRBS_USER_PATTERN_SET_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1470,11 +1589,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_PRBS_ERR_COUNT_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_PRBS_ERR_COUNT_START,
-                &ech_pqm_prbs_err_count_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_PRBS_ERR_COUNT_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_prbs_err_count_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_PRBS_ERR_COUNT_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1489,11 +1608,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_HORZ_BATHTUB_GET_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_HORIZONTAL_BATHTUB_GET_START,
-                &ech_pqm_horizontal_bathtub_get_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_HORZ_BATHTUB_GET_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_horizontal_bathtub_get_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_HORZ_BATHTUB_GET_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1508,11 +1627,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_VERT_BATHTUB_GET_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_VERTICAL_BATHTUB_GET_START,
-                &ech_pqm_vertical_bathtub_get_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_VERT_BATHTUB_GET_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_vertical_bathtub_get_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_VERT_BATHTUB_GET_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 
@@ -1527,11 +1646,11 @@ PUBLIC VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index)
             memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_2D_BATHTUB_GET_START,
-                &ech_pqm_2d_bathtub_get_start,
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN,
-                rx_index);
+                                                       &ech_pqm_2d_bathtub_get_start,
+                                                       (void *)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN,
+                                                       rx_index);
         }
         break;
 

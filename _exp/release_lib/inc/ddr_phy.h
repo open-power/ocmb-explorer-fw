@@ -122,6 +122,7 @@ extern uint32_t ddr_phy_init(uint32_t runDevInit,
                              uint32_t restoreTiming);
 extern uint32_t ddr_phy_eye_capture_init(save_eye_data eye_capture_step,
                                          uint8_t *eye_data_buffer_ptr);
+extern void ddr_phy_reset(void);
 extern uint32_t ddr_phy_bist(uint8_t power_state,
                              uint32_t rank_index,
                              uint32_t length,

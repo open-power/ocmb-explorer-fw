@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -38,13 +38,13 @@
 /*
 ** Include Files
 */
+#include "pmc_profile.h"
 #include "pmcfw_common.h"
 #include "top.h"
 #include "bc_printf.h"
 #include "flashloader.h"
 #include "ech.h"
 #include "fam.h"
-#include "spi_flash_plat.h"
 #include "fw_version_info.h"
 #include "flashloader_plat.h"
 #include "flash_partition_info.h"
@@ -56,6 +56,8 @@
 #include "sys_timer_api.h"
 #include "cpuhal.h"
 #include "pmc_plat.h"
+#include "wdt.h"
+#include "top_plat.h"
 
 /*
 ** Macro Constants
@@ -72,7 +74,6 @@
 #define FLASH_LOADER_FLASH_WRITE_PACKET_SEQUENCE_OFFSET     4
 
 #define FLASH_LOADER_SUBSECTOR_SIZE                         (4*1024)
-#define FLASH_LOADER_SUBSECTOR_BOUNDARY_START               (FLASH_LOADER_SUBSECTOR_SIZE - 1)
 
 
 
@@ -512,11 +513,12 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
     UINT32 partition_flag;
     spi_flash_dev_enum dev;
     spi_flash_dev_info_struct dev_info;
-    UINT8* erase_addr = (UINT8 *)(((partition_id == 'A') ? SPI_FLASH_FW_IMG_A_HDR_ADDR : SPI_FLASH_FW_IMG_B_HDR_ADDR) & (~SPI_FLASH_BASE_ADDRESS));
+    UINT8* erase_addr = (UINT8*)(((partition_id == 'A') ? SPI_FLASH_FW_IMG_A_HDR_ADDR : SPI_FLASH_FW_IMG_B_HDR_ADDR) & (~SPI_FLASH_BASE_ADDRESS));
     PMCFW_ERROR rc;
-    int i;
+    UINT32 i;
     UINT32 flash_subsector_number = (SPI_FLASH_FW_IMG_A_SIZE / 
-                                    (flashloader_plat_spi_dev_info.page_size * flashloader_plat_spi_dev_info.pages_per_subsector)) +1;
+                                    (flashloader_plat_spi_dev_info.page_size * flashloader_plat_spi_dev_info.pages_per_subsector)) + 1;
+    top_plat_lock_struct lock_struct;
 
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
@@ -527,7 +529,7 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
     if (rc != PMC_SUCCESS)
     {
         bc_printf("Flashloader: flashloader_plat_partition_erase dev_info failed\n");            
-        *err_code = rc;
+        *err_code = FLASHLOADER_ERR_DEVINFO_GET;
         return (FLASHLOADER_ERR_DEVINFO_GET);
     }
 
@@ -535,14 +537,32 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
     ** If partition 'A' is being erased, save the content
     ** of partition flag
     */ 
-    if(partition_id == 'A')
+    if (partition_id == 'A')
     {            
         write_partition_flag = TRUE;
         partition_flag = *((UINT32 *)(SPI_FLASH_FW_ACT_IMG_FLAG_ADDR));
     }
 
-    for( i =0; i < flash_subsector_number ; i++, erase_addr+=subsector_len)
+    UINT32 dot_count = 0;
+    bc_printf("Begin partition erase...\n");
+    for(i = 0; i < flash_subsector_number ; i++, erase_addr += subsector_len)
     {
+#if (EXPLORER_WDT_DISABLE == 0)	
+        wdt_hardware_tmr_kick();
+        wdt_interval_tmr_kick();
+#endif
+
+        /* Show erase progress on the UART using dots. */
+        if (50 == dot_count)
+        {
+            dot_count = 0;
+            bc_printf("\n");
+        }
+        else
+        {
+            bc_printf(".");
+            dot_count++;
+        }
 
         /* get the subsector address and length */
         rc = spi_flash_subsector_params_get(SPI_FLASH_PORT,
@@ -554,9 +574,12 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
         if (rc != PMC_SUCCESS)
         {
             bc_printf("Flashloader: flashloader_plat_partition_erase subsector_params_get failed\n");
-            *err_code = rc;
+            *err_code = FLASHLOADER_ERR_PARAMS_GET;
             return FLASHLOADER_ERR_PARAMS_GET;
         }
+
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_critical_region_enter(&lock_struct);
 
         /* erase the subsector */
         rc = spi_flash_subsector_erase_wait(SPI_FLASH_PORT,
@@ -564,10 +587,13 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
                                             subsector_base,
                                             dev_info.max_time_subsector_erase);
 
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
+
         if (rc != PMC_SUCCESS)
         {
             bc_printf("Flashloader: flashloader_plat_partition_erase subsector erase failed\n");
-            *err_code = rc;
+            *err_code = FLASHLOADER_ERR_SUBSECTOR_ERASE;
             return FLASHLOADER_ERR_SUBSECTOR_ERASE;
         }
 
@@ -575,19 +601,31 @@ PUBLIC UINT32 flashloader_plat_partition_erase(INT8 partition_id, UINT32 *err_co
 
     if (write_partition_flag == TRUE)
     {
-        rc = spi_plat_flash_write_pages((UINT8 *)&partition_flag,
-                                        (UINT8 *) ((SPI_FLASH_FW_ACT_IMG_FLAG_ADDR) & GPBC_FLASH_PHYS_ADDR_MASK),
-                                        sizeof(UINT32),
-                                        dev_info.page_size,
-                                        dev_info.max_time_page_prog);
-        
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_critical_region_enter(&lock_struct);
+
+        rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                                   SPI_FLASH_CS,
+                                   (UINT8*)&partition_flag,
+                                   (UINT8*) ((SPI_FLASH_FW_ACT_IMG_FLAG_ADDR) & GPBC_FLASH_PHYS_ADDR_MASK),
+                                   sizeof(UINT32),
+                                   dev_info.page_size,
+                                   dev_info.max_time_page_prog);
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
+
         if (rc != PMC_SUCCESS)
         {
-            *err_code = rc;
-            return FLASHLOADER_ERR_PARTITION_VALUE_WRITE;
+            bc_printf("Flashloader: flashloader_plat_partition_erase write partition flag failed\n");
+            *err_code = FLASHLOADER_ERR_FLASH_WRITE_FAIL;
+            return FLASHLOADER_ERR_FLASH_WRITE_FAIL;
         }
 
-    }       
+    }
+
+    bc_printf("\n...Done target partition erase.\n");
+           
     return PMC_SUCCESS;   
 }
 
@@ -655,8 +693,9 @@ PUBLIC void * flashloader_plat_flash_image_data_buf_address_get(void)
 *   packet sequence
 *
 */
-
-PUBLIC UINT32 flashloader_plat_flash_buffer_write(UINT32 flash_write_index, UINT8 *flash_image_data_buf, UINT32 *err_code)
+PUBLIC UINT32 flashloader_plat_flash_buffer_write(UINT32 flash_write_index, 
+                                                  UINT8 *flash_image_data_buf, 
+                                                  UINT32 *err_code)
 {
     PMCFW_ERROR rc;
     spi_flash_dev_enum dev;
@@ -664,54 +703,70 @@ PUBLIC UINT32 flashloader_plat_flash_buffer_write(UINT32 flash_write_index, UINT
     UINT8* subsector_base;
     UINT32 subsector_len;
     UINT32 flash_write_buffer_addr = (flash_write_index * FLASH_LOADER_PAGE_BUF_SIZE) + SPI_FLASH_FW_FW_UPGRADE_ADDR;
+    top_plat_lock_struct lock_struct;
 
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
                                 SPI_FLASH_CS,
                                 &dev,
                                 &dev_info);
-    
+        
     if (rc != PMC_SUCCESS)
     {
         bc_printf("Flashloader: flashloader_plat_flash_buffer_write dev_info failed\n");            
-        *err_code = rc;
-        return (FLASHLOADER_ERR_DEVINFO_GET);
+        *err_code = FLASHLOADER_ERR_DEVINFO_GET;
+        return FLASHLOADER_ERR_DEVINFO_GET;
     }
 
-    if(!(flash_write_buffer_addr & FLASH_LOADER_SUBSECTOR_BOUNDARY_START))
+    /* get the subsector address and length */
+    rc = spi_flash_subsector_params_get(SPI_FLASH_PORT,
+                                        SPI_FLASH_CS,
+                                        (UINT8 *)(flash_write_buffer_addr & (~SPI_FLASH_BASE_ADDRESS)),
+                                        &subsector_base,
+                                        &subsector_len);
+    
+    /* 
+    ** ensure that the flash memory about to be programmed is erased 
+    ** when performing a firmware download the SPI sub-blocks are erased
+    ** on-the-fly as the download proceeds and the sub-block is erased if:
+    ** - the address is the start of the reserved flash partition for downloads 
+    ** - the address is the start of the next sub-block
+    */
+    if ((SPI_FLASH_FW_FW_UPGRADE_ADDR == flash_write_buffer_addr) ||
+        (0 == (flash_write_buffer_addr & GPBC_FLASH_PHYS_ADDR_MASK) % subsector_len))
     {
+        bc_printf("Erasing Firmware Download Subsector @ 0x%08X ... ", flash_write_buffer_addr);
+        rc = spi_flash_plat_erase((UINT8*)(flash_write_buffer_addr & GPBC_FLASH_PHYS_ADDR_MASK),
+                                  subsector_len);
 
-        /* get the subsector address and length */
-        rc = spi_flash_subsector_params_get(SPI_FLASH_PORT,
-                                            SPI_FLASH_CS,
-                                            (UINT8 *)(flash_write_buffer_addr & (~SPI_FLASH_BASE_ADDRESS)),
-                                            &subsector_base,
-                                            &subsector_len);
-        
-
-        bc_printf("Erasing flash address = 0x%x\n",flash_write_buffer_addr);
-        rc = spi_flash_subsector_erase_wait(SPI_FLASH_PORT,
-                                            SPI_FLASH_CS,
-                                            subsector_base,
-                                            dev_info.max_time_subsector_erase);
-
-        if (rc != PMC_SUCCESS)
+        if (PMC_SUCCESS != rc)
         {
-            bc_printf("Flashloader: flashloader_plat_flash_buffer_write subsector erase failed, rc = 0x%x\n", rc);
-            *err_code = rc;
+            bc_printf("\nFlashloader: flashloader_plat_flash_buffer_write subsector erase failed, rc = 0x%x\n", rc);
+            *err_code = FLASHLOADER_ERR_SUBSECTOR_ERASE;
             return FLASHLOADER_ERR_SUBSECTOR_ERASE;
         }
+        bc_printf("done\n");
     }
 
-    rc = spi_plat_flash_write_pages((UINT8*)flash_image_data_buf,
-                                (UINT8 *)(flash_write_buffer_addr & GPBC_FLASH_PHYS_ADDR_MASK),
-                                FLASH_LOADER_PAGE_BUF_SIZE,
-                                dev_info.page_size,
-                                dev_info.max_time_page_prog);
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
+    /* write up until the end of the current page */
+    rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                               SPI_FLASH_CS,
+                               (UINT8*)flash_image_data_buf,
+                               (UINT8*)(flash_write_buffer_addr & GPBC_FLASH_PHYS_ADDR_MASK),
+                               FLASH_LOADER_PAGE_BUF_SIZE,
+                               dev_info.page_size,
+                               dev_info.max_time_page_prog);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
+
     if (rc != PMC_SUCCESS)
     {
-        *err_code = rc;
         bc_printf("Flashloader: flashloader_plat_flash_buffer_write write error %08lx\n", rc);
+        *err_code = FLASHLOADER_ERR_FLASH_WRITE_FAIL;
         return FLASHLOADER_ERR_FLASH_WRITE_FAIL;
     }
 
@@ -753,10 +808,11 @@ PUBLIC UINT32 flashloader_plat_flash_image_validate(UINT32 *err_code)
                                         SPI_FLASH_FW_FW_UPGRADE_SIZE);
     if (NULL == exec_image)
     {
-        bc_printf("Flashloader: flashloader_plat_flash_image_validate failed : %08lx\n", image_list.extend_err_code);
+        bc_printf("Flashloader: flashloader_plat_flash_image_validate failed : %08lx\n", 
+                  image_list.extend_err_code);
         /* Error in authentication */
-        *err_code =  image_list.extend_err_code;
-        return image_list.status;
+        *err_code = FLASHLOADER_ERR_AUTHENTICATION_ERROR;
+        return PMCFW_ERR_FAIL;
     }
     bc_printf("Flashloader: flashloader_plat_flash_image_validate passed \n");
     return PMC_SUCCESS;
@@ -789,18 +845,21 @@ PUBLIC UINT32 flashloader_plat_flash_image_finalize(INT8 flash_partition_id, UIN
     UINT32 i;
     UINT32 flash_image_src = SPI_FLASH_FW_FW_UPGRADE_ADDR;
     UINT32 flash_image_dest = (flash_partition_id == 'A') ? SPI_FLASH_FW_IMG_A_HDR_ADDR : SPI_FLASH_FW_IMG_B_HDR_ADDR;
+    top_plat_lock_struct lock_struct;
 
-    bc_printf("flashloader_plat_flash_image_finalize, moving code to partition %c ", flash_partition_id);
+    bc_printf("flashloader_plat_flash_image_finalize, moving code to partition %c\n", flash_partition_id);
     /* Point the image location to temporary partition in flash*/
     image_list.image_addr = (UINT8*)SPI_FLASH_FW_FW_UPGRADE_ADDR;
     image_length =fam_image_length_get(&image_list, image_id) + SPI_FLASH_FW_IMG_A_HDR_SIZE;
 
     if(image_length > SPI_FLASH_FW_IMG_A_SIZE)
     {
-        *err_code = image_length;
+        bc_printf("Flashloader Image Finalize error: invalid length=0x%08x\n", image_length);
+        *err_code = FLASHLOADER_ERR_FLASH_IMAGE_COMMIT_FW_LENGTH_OUT_OF_RANGE;
         return FLASHLOADER_ERR_FLASH_IMAGE_COMMIT_FW_LENGTH_OUT_OF_RANGE;
     }
     
+    bc_printf("flashloader_plat_flash_image_finalize, erasing target partition %c\n", flash_partition_id);
     rc = flashloader_plat_partition_erase(flash_partition_id, err_code);
     if( rc != PMC_SUCCESS)
     {        
@@ -813,29 +872,42 @@ PUBLIC UINT32 flashloader_plat_flash_image_finalize(INT8 flash_partition_id, UIN
                                 SPI_FLASH_CS,
                                 &dev,
                                 &dev_info);
-    
+        
     if (rc != PMC_SUCCESS)
     {
         bc_printf("Flashloader: flashloader_plat_flash_image_finalize dev_info failed\n");            
-        *err_code = rc;
+        *err_code = FLASHLOADER_ERR_DEVINFO_GET;
         return (FLASHLOADER_ERR_DEVINFO_GET);
     }
     
 
     /* Calculate number of Page buffer write sequence*/
     flash_write_loop_cnt = (image_length / FLASH_LOADER_PAGE_BUF_SIZE) + ((image_length % FLASH_LOADER_PAGE_BUF_SIZE) ? 1 : 0);
-
+    bc_printf("flashloader_plat_flash_image_finalize, copying new image to target partition %c\n", flash_partition_id);
     for(i=0; i < flash_write_loop_cnt; i++)
     {
-        rc = spi_plat_flash_write_pages((UINT8 *)flash_image_src,
-                                    (UINT8 *)(flash_image_dest & GPBC_FLASH_PHYS_ADDR_MASK),
-                                    FLASH_LOADER_PAGE_BUF_SIZE,
-                                    dev_info.page_size,
-                                    dev_info.max_time_page_prog);
+#if (EXPLORER_WDT_DISABLE == 0)	
+        wdt_hardware_tmr_kick();
+        wdt_interval_tmr_kick();
+#endif
+
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_critical_region_enter(&lock_struct);
+
+        rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                                   SPI_FLASH_CS,
+                                   (UINT8*)flash_image_src,
+                                   (UINT8*)(flash_image_dest & GPBC_FLASH_PHYS_ADDR_MASK),
+                                   FLASH_LOADER_PAGE_BUF_SIZE,
+                                   dev_info.page_size,
+                                   dev_info.max_time_page_prog);
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
 
         if (rc != PMC_SUCCESS)
         {
-            *err_code = rc;
+            *err_code = FLASHLOADER_ERR_FLASH_WRITE_FAIL;
             bc_printf("Flashloader: flashloader_plat_flash_image_finalize write error %08lx\n", rc);
             return FLASHLOADER_ERR_FLASH_WRITE_FAIL;
         }
@@ -869,43 +941,58 @@ PUBLIC UINT32 flashloader_plat_flash_image_finalize(INT8 flash_partition_id, UIN
                                         &subsector_base,
                                         &subsector_len);
     
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     rc = spi_flash_subsector_erase_wait(SPI_FLASH_PORT,
-                                            SPI_FLASH_CS,
-                                            subsector_base,
-                                            dev_info.max_time_subsector_erase);
+                                        SPI_FLASH_CS,
+                                        subsector_base,
+                                        dev_info.max_time_subsector_erase);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
 
     if (rc != PMC_SUCCESS)
     {
         bc_printf("Flashloader: flashloader_plat_flash_image_finalize subsector erase failed\n");
-        *err_code = rc;
+        *err_code = FLASHLOADER_ERR_SUBSECTOR_ERASE;
         return FLASHLOADER_ERR_SUBSECTOR_ERASE;
     }
 
 
     /* Calculate number of Page buffer write sequence*/
-     flash_write_loop_cnt = (FLASH_LOADER_SUBSECTOR_SIZE / FLASH_LOADER_PAGE_BUF_SIZE);
+    flash_write_loop_cnt = (FLASH_LOADER_SUBSECTOR_SIZE / FLASH_LOADER_PAGE_BUF_SIZE);
 
-     flash_image_src = (UINT32)__ghsbegin_fw_auth_mem;
-     flash_image_dest = SPI_FLASH_FW_ACT_IMG_FLAG_ADDR;
+    flash_image_src = (UINT32)__ghsbegin_fw_auth_mem;
+    flash_image_dest = SPI_FLASH_FW_ACT_IMG_FLAG_ADDR;
     
-     for (i=0; i < flash_write_loop_cnt; i++)
-     {
-         rc = spi_plat_flash_write_pages((UINT8*)flash_image_src,
-                                    (UINT8 *)(flash_image_dest & GPBC_FLASH_PHYS_ADDR_MASK),
-                                    FLASH_LOADER_PAGE_BUF_SIZE,
-                                    dev_info.page_size,
-                                    dev_info.max_time_page_prog);
-         if (rc != PMC_SUCCESS)
-         {
-             *err_code = rc;
-              bc_printf("Flashloader: flashloader_plat_flash_image_finalize write error %08lx\n", rc);
-              return FLASHLOADER_ERR_FLASH_WRITE_FAIL;
-         }
-         
-         flash_image_src += FLASH_LOADER_PAGE_BUF_SIZE;
-         flash_image_dest +=FLASH_LOADER_PAGE_BUF_SIZE;         
-     }
-     
+    for (i=0; i < flash_write_loop_cnt; i++)
+    {
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_critical_region_enter(&lock_struct);
+
+        rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                                   SPI_FLASH_CS,
+                                   (UINT8*)flash_image_src,
+                                   (UINT8*)(flash_image_dest & GPBC_FLASH_PHYS_ADDR_MASK),
+                                   FLASH_LOADER_PAGE_BUF_SIZE,
+                                   dev_info.page_size,
+                                   dev_info.max_time_page_prog);
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
+
+        if (rc != PMC_SUCCESS)
+        {
+            *err_code = FLASHLOADER_ERR_FLASH_WRITE_FAIL;
+            bc_printf("Flashloader: flashloader_plat_flash_image_finalize write error %08lx\n", rc);
+            return FLASHLOADER_ERR_FLASH_WRITE_FAIL;
+        }
+        
+        flash_image_src += FLASH_LOADER_PAGE_BUF_SIZE;
+        flash_image_dest +=FLASH_LOADER_PAGE_BUF_SIZE;         
+    }
+    
     bc_printf("...Done\n");
     return PMC_SUCCESS;    
 
@@ -924,7 +1011,10 @@ PUBLIC UINT32 flashloader_plat_flash_image_finalize(INT8 flash_partition_id, UIN
 *   None.
 *
 */
-PUBLIC VOID flashloader_plat_send_respnse(BOOL return_code, UINT32 ext_err_code, UINT32 ext_resp_length, UINT8* resp_buf)
+PUBLIC VOID flashloader_plat_send_respnse(UINT8 return_code, 
+                                          UINT32 ext_err_code, 
+                                          UINT32 ext_resp_length, 
+                                          UINT8* resp_buf)
 {
     exp_rsp_struct* rsp_ptr = ech_rsp_ptr_get();
     exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();

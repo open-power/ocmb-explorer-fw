@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -71,7 +71,7 @@
 #define TWI_POLLING_SPINLOCK_ENABLE 0
 
 /* set to 1 to enable master recovery, or 0 to disable */
-#define TWI_MST_RECOV_ENABLE  0
+#define TWI_MST_RECOV_ENABLE  1
 
 /* 
 ** Set to 1 to enable operation with ThreadX, or 0 to operate without ThreadX 

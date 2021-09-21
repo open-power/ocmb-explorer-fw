@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -46,6 +46,7 @@
 #include "fw_version_info.h"
 #include "flash_partition_info.h"
 #include "app_fw.h"
+#include "spi_flash_plat.h"
 #include <string.h>
 
 
@@ -74,6 +75,8 @@ typedef struct
     UINT32 spi_flash_sector_size;               /**<  Flash sector size in Bytes            */
     UINT32 spi_flash_size;                      /**<  SPI flash size in Bytes               */
     UINT32 error_buffer_size;                   /**<  FW error buffer size in Bytes         */
+    spi_flash_plat_auth_info_struct spi_flash_plat_auth_info;
+                                                /**<  SPI flash image authentication info   */
 }fw_adapter_properties_struct;
 
 
@@ -123,11 +126,14 @@ PRIVATE VOID adapter_info_properties_handler_get(VOID)
 
     adapt->error_buffer_size = EXP_FW_LOG_SIZE_4KB;
 
+    /* Fill out SPI authentication information */
+    spi_flash_plat_image_info_get(&adapt->spi_flash_plat_auth_info);
+
     /* set the success indication */
     rsp_ptr->parms[0] = PMC_SUCCESS;
 
     /* Set the extended error code */    
-    rsp_ptr->parms[1] = 0;
+    rsp_ptr->parms[1] = PMC_SUCCESS;
 
     /* set the extended data response length */
     rsp_ptr->ext_data_len = sizeof(fw_adapter_properties_struct);

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -77,7 +77,7 @@
 #define PMCFW_MID_BOOT                          (0x0004)    /* Boot loader code                                 */
 #define PMCFW_MID_CMDSVR                        (0x0005)    /* UART/TWI Command Server                          */
 #define PMCFW_MID_FLM                           (0x0006)    /* FLM code                                         */
-#define PMCFW_MID_WDG                           (0x0007)    /* Watchdog                                         */
+#define PMCFW_MID_WDT                           (0x0007)    /* Watchdog                                         */
 #define PMCFW_MID_SEEP                          (0x0008)    /* Serial EEPROM driver module                      */
 #define PMCFW_MID_DDR_TOOLBOX                   (0x0009)    /* DDR Toolbox                                      */
 #define PMCFW_MID_CPUHAL                        (0x000A)    /* CPUHAL module                                    */
@@ -110,7 +110,8 @@
 #define PMCFW_MID_TEMP                          (0x0025)    /* Temperature sensor module                        */
 #define PMCFW_MID_OCMB_API                      (0x0026)    /* OCMB API                                         */
 #define PMCFW_MID_DDR_FW                        (0x0027)    /* FW DDR PHY module                                */
-#define PMCFW_MOD_NUM                           (0x0028)    /* The number of modules PMCFW supported
+#define PMCFW_MID_PVT                           (0x0028)    /* PVT Module                                       */
+#define PMCFW_MOD_NUM                           (0x0029)    /* The number of modules PMCFW supported
                                                              * Once a new module is added, this number must be
                                                              * increased accordingly                            */
 
@@ -124,7 +125,7 @@
 #define PMCFW_ERR_BASE_BOOT                     (PMCFW_MID_BOOT                 << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_CMDSVR                   (PMCFW_MID_CMDSVR               << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_FLM                      (PMCFW_MID_FLM                  << PMCFW_ERR_MID_OFFSET)
-#define PMCFW_ERR_BASE_WDG                      (PMCFW_MID_WDG                  << PMCFW_ERR_MID_OFFSET)
+#define PMCFW_ERR_BASE_WDT                      (PMCFW_MID_WDT                  << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_SEEP                     (PMCFW_MID_SEEP                 << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_DDR_TOOLBOX              (PMCFW_MID_DDR_TOOLBOX          << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_RESET                    (PMCFW_MID_RESET                << PMCFW_ERR_MID_OFFSET)
@@ -157,6 +158,7 @@
 #define PMCFW_ERR_BASE_TEMP                     (PMCFW_MID_TEMP                 << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_OCMB_API                 (PMCFW_MID_OCMB_API             << PMCFW_ERR_MID_OFFSET)
 #define PMCFW_ERR_BASE_DDR_FW                   (PMCFW_MID_DDR_FW               << PMCFW_ERR_MID_OFFSET)
+#define PMCFW_ERR_BASE_PVT                      (PMCFW_MID_PVT                  << PMCFW_ERR_MID_OFFSET)
 
 /*
 ** Macros

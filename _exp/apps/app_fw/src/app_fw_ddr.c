@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021  Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -41,6 +41,7 @@
 #include "top.h"
 #include "spi_plat.h"
 #include "pmc_plat.h"
+#include "top_plat.h"
 
 /*
 ** Local Constants
@@ -111,8 +112,10 @@ PRIVATE UINT32 app_fw_ddr_training_data_addr_get(void)
 */
 PRIVATE PMCFW_ERROR app_fw_ddr_phy_bringup_init(void)
 {
-    PMCFW_ERROR                        rc;
+    PMCFW_ERROR rc;
     
+    ddr_api_fw_phy_reset();
+
     ddr_api_init(&user_input_msdg_array[DDR_PHY_DEFAULT_USER_INPUT_MSDG]);
 
 #if (APP_FW_DISABLE_DDR_SPI_RELOAD == 0)
@@ -169,18 +172,20 @@ PRIVATE PMCFW_ERROR app_fw_ddr_phy_bringup_init(void)
 PUBLIC PMCFW_ERROR app_fw_ddr_calibration_save(app_fw_ddr_calibration_data_struct *ddr_training_data)
 {
     PMCFW_ERROR rc             = PMC_SUCCESS;
+#if (EXPLORER_DDR_TRAIN_PARMS_SAVE_DISABLE == 0)
     UINT32      spi_flash_addr = app_fw_ddr_training_data_addr_get();
     spi_flash_dev_info_struct dev_info;
     spi_flash_dev_enum        dev;
     UINT8*                    subsector_base;
     UINT32                    subsector_len;
+    top_plat_lock_struct lock_struct;
 
     /* Add header and CRC to training data structure */
     ddr_training_data->header = APP_FW_DDR_SAVED_DATA_HEADER;
     ddr_training_data->crc = pmc_crc32((UINT8*)&ddr_training_data,
                                        sizeof(app_fw_ddr_calibration_data_struct) - sizeof(UINT32),
                                        0, TRUE, TRUE);
-
+    
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
                                 SPI_FLASH_CS,
@@ -190,7 +195,7 @@ PUBLIC PMCFW_ERROR app_fw_ddr_calibration_save(app_fw_ddr_calibration_data_struc
     {
         return APP_FW_DDR_ERR_TRAINING_ERASE;
     }
-
+    
     /* get the subsector address */
     rc = spi_flash_subsector_params_get(SPI_FLASH_PORT,
                                         SPI_FLASH_CS,
@@ -201,38 +206,41 @@ PUBLIC PMCFW_ERROR app_fw_ddr_calibration_save(app_fw_ddr_calibration_data_struc
     {
         return APP_FW_DDR_ERR_TRAINING_ERASE;
     }
-
-    /* halt other VPE so SPI Flash can be erased and written */
-    hal_disable_mvpe();
+    
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
 
     /* erase subsector */
     rc = spi_flash_subsector_erase_wait(SPI_FLASH_PORT,
                                         SPI_FLASH_CS,
                                         subsector_base,
                                         dev_info.max_time_subsector_erase);
-
+    
     if (PMC_SUCCESS != rc)
     {
         rc = APP_FW_DDR_ERR_TRAINING_ERASE;
     }
     else
     {
-        /* save DDR data in SPI flash */    
-        rc = spi_plat_flash_write_pages((UINT8*)ddr_training_data,
-                                        (UINT8*)(spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK),
-                                        sizeof(app_fw_ddr_calibration_data_struct),
-                                        dev_info.page_size,
-                                        dev_info.max_time_page_prog);
-
+        /* save DDR data in SPI flash */
+        rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                                   SPI_FLASH_CS,
+                                   (UINT8*)ddr_training_data,
+                                   (UINT8*)(spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK),
+                                   sizeof(app_fw_ddr_calibration_data_struct),
+                                   dev_info.page_size,
+                                   dev_info.max_time_page_prog);
+    
         if (PMC_SUCCESS != rc)
         {
             rc = APP_FW_DDR_ERR_TRAINING_WRITE;
         }
     }
-
-    /* resume other VPE */
-    hal_enable_mvpe();
-
+    
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
+#endif
+    
     return rc;
 }
 
@@ -251,15 +259,23 @@ PUBLIC PMCFW_ERROR app_fw_ddr_calibration_load(app_fw_ddr_calibration_data_struc
     PMCFW_ERROR rc             = PMC_SUCCESS;
     UINT32      spi_flash_addr = app_fw_ddr_training_data_addr_get();
 
-    memset(ddr_training_data, 0, sizeof(ddr_training_data));
+    memset(ddr_training_data, 0, sizeof(app_fw_ddr_calibration_data_struct));
 
 #if (APP_FW_DISABLE_DDR_SPI_RELOAD == 0)
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_lock_struct lock_struct;
+    top_plat_critical_region_enter(&lock_struct);
+
     /* Check for saved calibration results */
     rc = spi_flash_read(SPI_FLASH_PORT,
                         SPI_FLASH_CS,
                         (UINT8*)((UINT32)spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK),
                         (UINT8*)ddr_training_data,
                         sizeof(app_fw_ddr_calibration_data_struct));
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);    
 
     if (rc != PMC_SUCCESS)
     {
@@ -280,6 +296,66 @@ PUBLIC PMCFW_ERROR app_fw_ddr_calibration_load(app_fw_ddr_calibration_data_struc
 #else
     rc = PMCFW_ERR_FAIL;
 #endif
+    return rc;
+}
+
+/**
+* @brief
+*   Read a section of DDR PHY calibration results from SPI
+*   Flash.
+* @param[in] offset - The offset in the ddr calibration data
+*       structure to start reading from
+* @param[in] size - The number of bytes to read
+* @param[out] rx_data_ptr - Pointer to the calibration data
+*       structure
+* @param[out] size_read - The number of bytes that was read.
+*       This will be less than size when the end of the
+*       structure was reached
+*
+* @return
+*   PMC_SUCCESS if successful.
+*
+*/
+PUBLIC PMCFW_ERROR app_fw_ddr_calibration_read(UINT32 offset, UINT32 size, VOID * rx_data_ptr, UINT32 * size_read)
+{
+
+    UINT32 rc;
+
+    UINT32 struct_size = sizeof(app_fw_ddr_calibration_data_struct);
+    
+    UINT32 spi_flash_addr = app_fw_ddr_training_data_addr_get();    
+        
+    /* Calculate the size of data that can be read */
+    if (offset + size > struct_size) 
+    {
+        if (offset < struct_size) 
+        {
+            *size_read = struct_size - offset;
+        }
+        else
+        {
+            *size_read = 0;
+        }
+    }
+    else
+    {
+        *size_read = size;
+    }
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_lock_struct lock_struct;
+    top_plat_critical_region_enter(&lock_struct);
+
+    /* Copy the data from the calibration structure */
+    rc = spi_flash_read(SPI_FLASH_PORT,
+                        SPI_FLASH_CS,
+                        (UINT8*)((UINT32)(spi_flash_addr + offset) & GPBC_FLASH_PHYS_ADDR_MASK),
+                        (UINT8*)rx_data_ptr,
+                        *size_read);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);  
+
     return rc;
 }
 

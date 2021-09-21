@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -44,6 +44,7 @@
 #include "pmc_hw_base.h"
 #include "top_exp_config_guide.h"
 #include "serdes_config_guide.h"
+#include "serdes_cg_supplement.h"
 #include <string.h>
 #include "serdes_plat.h"
 #include "app_fw.h"
@@ -55,7 +56,8 @@
 #include "ocmb_config_guide_mchp.h"
 #include "ocmb_config_guide.h"
 #include "bc_printf.h"
-
+#include "top_plat.h"
+#include "ocmb_erep.h"
 
 /*
 ** Global Variables
@@ -76,40 +78,35 @@
 ** Private Data
 */
 
-#define SERDES_REG_CRASH_DUMP_SIZE 0x80000
+/* Crash dump size empirically determined to be 0x65ca bytes. */
+/*
+** The crash dump size for the SerDes regsiters has been empirically determined 
+** to be a size of 0x6bca bytes.  Setting it to be 0x7000 to provide some room 
+** for growth. 
+*/
+#define SERDES_REG_CRASH_DUMP_SIZE 0x7000
 
-/* SERDES_PI_PHGEN_IQCOR_CFG2 data and timing selection */
-#define SERDES_PI_PHGEN_IQCOR_CFG2_DATA_ENABLED_TIMING_DISABLED     0x01
-#define SERDES_PI_PHGEN_IQCOR_CFG2_DATA_DISABLED_TIMING_ENABLED     0x02
-
-#define SERDES_IQ_MAX_NEGATIVE      -16
-#define SERDES_IQ_MAX_POSITIVE      15
-
-/* SERDES rtrim_34_15 validity masks */
-#define SERDES_RTRIM_34_15_BIT6_VALID       0x40
-#define SERDES_RTRIM_34_15_MASK             0x00FF
-
+/* SerDes periodic cal initialized flag */
 PRIVATE BOOL serdes_initialized = FALSE;
 
+/* Flag to disable SerDes periodic cal */
+PRIVATE BOOL serdes_cal_timer_disable = FALSE;
+
 /* SerDes FFE settings */
-#define SERDES_FFE_DEFAULT_PRECURSOR    0
-#define SERDES_FFE_MIN_PRECURSOR        0
-#define SERDES_FFE_MAX_PRECURSOR        32
 PRIVATE UINT32 serdes_ffe_precursor = SERDES_FFE_DEFAULT_PRECURSOR;
-
-#define SERDES_FFE_DEFAULT_POSTCURSOR   0
-#define SERDES_FFE_MIN_POSTCURSOR       0
-#define SERDES_FFE_MAX_POSTCURSOR       32
 PRIVATE UINT32 serdes_ffe_postcursor = SERDES_FFE_DEFAULT_POSTCURSOR;
-
-#define SERDES_FFE_DEFAULT_CALIBRATION  0x28
-#define SERDES_FFE_MIN_CALIBRATION      64
-#define SERDES_FFE_MAX_CALIBRATION      80
-PRIVATE UINT32 serdes_fuse_val_stat_1 = 0;
 PRIVATE UINT32 serdes_ffe_calibration = SERDES_FFE_MIN_CALIBRATION;
 
 #define SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION  0
 
+/* Timer period in ms to update calibration */
+#define SERDES_CAL_UPDATE_PERIOD_MS 5000
+
+/* Init flag for periodic serdes cal */
+PRIVATE BOOL serdes_cal_timer_init;
+
+/* Variable to hold the last time that the periodic cal was run */
+PRIVATE UINT_TIME sys_timer_last_cal;
 
 /*
 ** Private Functions
@@ -138,7 +135,7 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_1(UINT32 lane, UINT32 frequen
     /* initialize termination on the lane */
     SERDES_FH_fw_init(SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset);
 
-    /* Do CSU_init_1 */
+    /* invoke FH_CSU_init_1 */
     switch (frequency)
     {
         case EXP_SERDES_21_33_GBPS: 
@@ -170,9 +167,10 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_1(UINT32 lane, UINT32 frequen
     {
         /* CSU_1 initialization failed */
         bc_printf("[%d] SERDES_FH_CSU_init_1_2XgXX FAILED\n", lane);
-        return EXP_SERDES_TRAINING_CSU_FAILED;
+        return EXP_SERDES_TRAINING_CSU_FAILED_1;
     }
 
+    /* invoke FH_CSU_init_2 */
     switch (frequency)
     {
         case EXP_SERDES_21_33_GBPS: 
@@ -204,7 +202,7 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_1(UINT32 lane, UINT32 frequen
     {
         /* CSU_2 initialization failed */
         bc_printf("[%d] SERDES_FH_CSU_init_2_2XgXXX FAILED\n", lane);
-        return EXP_SERDES_TRAINING_CSU_FAILED;
+        return EXP_SERDES_TRAINING_CSU_FAILED_2;
     }
     return (PMC_SUCCESS);
 }
@@ -420,11 +418,12 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
     }
 
     /* initialize PGA */        
-    SERDES_FH_PGA_init(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+    SERDES_FH_PGA_init((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
+                       (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset));
 
     /* determine if the host provided non-default FFE settings */
-    if ((SERDES_FFE_DEFAULT_PRECURSOR == serdes_ffe_precursor) ||
-        (SERDES_FFE_DEFAULT_POSTCURSOR == serdes_ffe_postcursor))
+    if ((SERDES_FFE_DEFAULT_PRECURSOR == serdes_plat_ffe_precursor_get()) ||
+        (SERDES_FFE_DEFAULT_POSTCURSOR == serdes_plat_ffe_postcursor_get()))
     {
         /* default FFE values being used */
 
@@ -449,48 +448,18 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
     }
     else
     {
-        /* host has provided non-default FFE pre- and/or post-cursor values
+        /* 
+        ** host has provided non-default FFE pre- and post-cursor values
         ** calculate FFE settings based on code provided by mixed signal 
         */ 
-
-        /* determine if a valid fuse value setting should be used */
-
-        /* read rtrim settings */
-        SERDES_FH_read_rtrim((SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset),
-                             &rtrim_14_0,
-                             &rtrim_34_15);
-
-        if (SERDES_RTRIM_34_15_BIT6_VALID == (rtrim_34_15 & SERDES_RTRIM_34_15_BIT6_VALID))
-        {
-            /* valid setting in fuse register, use FUSE_VAL_STAT_1:RTRIM_34_15 */
-            serdes_fuse_val_stat_1 = (rtrim_34_15 & ~SERDES_RTRIM_34_15_BIT6_VALID) & SERDES_RTRIM_34_15_MASK;
-        }
-
-        /* 
-        ** set the FFE calibration value as per mixed signal:
-        ** CAL (in decimal) = 64 + TX3_P3A_D1EN[5]*6 + TX3_P3A_D1EN[4]*4 + TX3_P3A_D1EN[3]*2
-        **                    + TX3_P3A_D1EN[2]*2 + TX3_P3A_D1EN[1]*1 + TX3_P3A_D1EN[0]*1
-        **  
-        ** serdes_ffe_fuse_val_stat_1 can be set to TX3_P3A_D1EN but a value for TX3_P3A_D1EN 
-        ** is re-calculated as one of the set of the 13 6-bit values. The calculated value is 
-        ** usually the same as serdes_ffe_fuse_val_stat_1. 
-        */ 
-        serdes_ffe_calibration = SERDES_FFE_MIN_CALIBRATION +
-                                 (((serdes_fuse_val_stat_1 & 0x20) >> 5) * 6) +
-                                 (((serdes_fuse_val_stat_1 & 0x10) >> 4) * 4) +
-                                 (((serdes_fuse_val_stat_1 & 0x08) >> 3) * 2) +
-                                 (((serdes_fuse_val_stat_1 & 0x04) >> 2) * 2) +
-                                 (((serdes_fuse_val_stat_1 & 0x02) >> 1) * 1) +
-                                 (((serdes_fuse_val_stat_1 & 0x01) >> 0) * 1);
-
 
         /* 
         ** calculate the 13 6-bit words that control the TX amplitude
         ** the encoding scheme is set to have maxswing on the TX output
         */
-        serdes_plat_txctrls_maxswing(serdes_ffe_precursor,
-                                     serdes_ffe_postcursor,
-                                     serdes_ffe_calibration,
+        serdes_plat_txctrls_maxswing(serdes_plat_ffe_precursor_get(),
+                                     serdes_plat_ffe_postcursor_get(),
+                                     serdes_plat_ffe_calibration_get(),
                                      &tx_p1a_d1en,
                                      &tx_p1a_d2en,
                                      &tx_p1b_d1en,
@@ -539,6 +508,7 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
                                          &tx_p1b_pten);
 
     /* dump the settings for the current lane */
+#if SERDES_CAL_VERBOSE == 1
     bc_printf("[%d] tx_p1a_d1en = 0x%02X\n", lane, tx_p1a_d1en);
     bc_printf("[%d] tx_p1a_d2en = 0x%02X\n", lane, tx_p1a_d2en);
     bc_printf("[%d] tx_p1b_d1en = 0x%02X\n", lane, tx_p1b_d1en);
@@ -552,7 +522,7 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
     bc_printf("[%d] tx_p2a_pten = 0x%02X\n", lane, tx_p2a_pten);
     bc_printf("[%d] tx_p2b_pten = 0x%02X\n", lane, tx_p2b_pten);
     bc_printf("[%d] tx_p3a_d1en = 0x%02X\n", lane, tx_p3a_d1en);
-
+#endif
     /**
      * From the config guide: 
      *  
@@ -591,6 +561,8 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
                             (SERDES_MDSP_PCBI_BASE_ADDR + lane_offset),
                             (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset),
                             (SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
+                            ech_serdes_cdr_prop_gain_get(),
+                            ech_serdes_cdr_integ_gain_get(),
                             tap_sel,
                             udfe_mode,
 #if EXPLORER_HOST_SET_PH_OFS_T_PRELOAD == 1
@@ -608,509 +580,96 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
 
 /**
 * @brief
-*   Low Level SerDes Data and Timing IQ Offset Calibration
-*
-* @param [in] lanes: Number of lanes being configured
+*   Initializes the serdes periodic calibration. The periodic
+*   calibration is necessary for optimal performance with the
+*   SerDes PRBS calibration sequence.
+*  
+* @param [in] serdes_cal_prbs: TRUE - SerDes PRBS cal sequence
+*        has been run. FALSE otherwise.
 *  
 * @return
-*   PMC_SUCCESS for SUCCESS, otherwise error codes.
-* 
+*   Nothing
+*
 * @note
-* 
 */
-#if EXPLORER_SERDES_D_T_IQ_CALIBRATION_DEBUG == 0
-PUBLIC UINT32 serdes_plat_iq_offset_calibration(UINT8 lane_bitmask)
+PUBLIC VOID serdes_plat_periodic_cal_init(BOOL serdes_cal_prbs)
 {
-    INT32 d_iq_offset;
-    INT32 t_iq_offset;
-    UINT32 iq_accum_reg_val;
-    INT16 iq_accum;
-    INT16 prev_iq_accum;
-    UINT32 iq_done;
-    BOOL first_measurement;
-    UINT32 lane_offset = 0;
 
-    for (UINT32 current_lane = 0; current_lane < SERDES_LANES; current_lane++)
+    serdes_cal_timer_init = FALSE;
+
+    /* Not required on the non-PRBS sequence */
+    if (!serdes_cal_prbs) 
     {
-        if (lane_bitmask & (1 << current_lane))
-        {
-            bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_iq_offset_calibration()\n", current_lane);
-
-            /* set the offset for the lane being configured */
-            lane_offset = current_lane * SERDES_LANE_REG_OFFSET;
-
-            /* capture starting correction offsets */
-            d_iq_offset = serdes_api_d_iq_offset_read(lane_offset);
-            t_iq_offset = serdes_api_t_iq_offset_read(lane_offset);
-
-            /* select current lane for offset correction */
-            if (FALSE == SERDES_FH_IQ_Offset_Calibration_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                            SERDES_PI_PHGEN_IQCOR_CFG2_DATA_ENABLED_TIMING_DISABLED))
-            {
-                /* calibration1 failed */
-                bc_printf("    SERDES_FH_IQ_Offset_Calibration_1() failed\n");
-                return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_1_FAILED);
-            }
-
-#if 0
-            /* 
-            ** as per config guide initial value of iq_done = 1 
-            ** not needed, see modifications to SERDES_FH_IQ_Offset_Calibration_2() 
-            */
-            iq_done = 1;
-#endif
-
-            /* do not check for convergence on first measurement */
-            first_measurement = TRUE;
-
-            while (TRUE)
-            {
-                /* set data and timing correction offsets, data calibration enabled, timing calibration disabled, and utility unused */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_3((SERDES_MDSP_PCBI_BASE_ADDR + lane_offset),
-                                                               d_iq_offset,
-                                                               TRUE,
-                                                               t_iq_offset,
-                                                               FALSE,
-                                                               0))
-                {
-                    /* calibration3 failed */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_3() failed\n");
-                    return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_3_FAILED);
-                }
-
-                /* run calibration and find direction to move offset */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_2((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                               iq_done,
-                                                               &iq_done,
-                                                               &iq_accum_reg_val))
-                {
-                    /* calibration2 failed */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_2() data IQ calibration timed out\n");
-                    return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_2_FAILED);
-                }
-
-                /* convert the iq_accum register value from unsigend 32-bit to signed 16-bit signed */
-                iq_accum = (INT16)iq_accum_reg_val;
-
-                /* do not check for convergence on first measurement */
-                if (FALSE == first_measurement)
-                {
-                    /* check for convergence, signaled by sign change */
-                    if (((prev_iq_accum < 0) && (iq_accum > 0)) ||
-                        ((prev_iq_accum > 0) && (iq_accum < 0)))
-                    {
-                        /* data IQ phase has converged */
-                        break;
-                    }
-                }
-                else
-                {
-                    /* first measurement taken */
-                    first_measurement = FALSE;
-                }
-
-                /* move data offset accordingly */
-                if (iq_accum > 0)
-                {
-                    d_iq_offset += -1;
-                }
-                else if (iq_accum < 0)
-                {
-                    d_iq_offset += 1;
-                }
-
-                /* check if new correction offset is out of range */
-                if ((d_iq_offset < SERDES_IQ_MAX_NEGATIVE) ||
-                    (d_iq_offset > SERDES_IQ_MAX_POSITIVE))
-                {
-                    bc_printf("    data IQ offset is out of range = %d\n", d_iq_offset);
-                    return (EXP_SERDES_DATA_IQ_OFFSET_OUT_OF_RANGE);
-                }
-
-                /* record iq_accum for next comparison */
-                prev_iq_accum = iq_accum;
-            }
-
-#if EXPLORER_HOST_SET_D_IQ_OFFSET == 1
-            if (ech_d_iq_offset_use_host_get() != 0)
-            {
-                /* overwrite D_IQ phase convergence result with host value */
-                bc_printf("    lane %u hardware converged data IQ phase offset = %d\n", 
-                          current_lane, d_iq_offset);
-                bc_printf("    lane %u setting host specified IQ phase offset  = %d\n", 
-                          current_lane, ech_d_iq_offset_get(current_lane));
-
-                /* use host values to set register field */
-                serdes_api_d_iq_offset_write(lane_offset, ech_d_iq_offset_get(current_lane));
-            }
-#endif
-
-            /* select timing for offset correction */
-            if ( FALSE == SERDES_FH_IQ_Offset_Calibration_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                            SERDES_PI_PHGEN_IQCOR_CFG2_DATA_DISABLED_TIMING_ENABLED))
-            {
-                /* calibration failed */
-                bc_printf("    SERDES_FH_IQ_Offset_Calibration_1() failed\n");
-                return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_1_FAILED);
-            }
-
-#if 0
-            /* 
-            ** as per config guide initial value of iq_done = 1 
-            ** not needed, see modifications to SERDES_FH_IQ_Offset_Calibration_2() 
-            */
-            iq_done = 1;
-#endif
-
-            /* do not check for convergence on first measurement */
-            first_measurement = TRUE;
-
-            while (TRUE)
-            {
-                /* set data and timing correction offsets, timing calibration enabled, data calibration disabled, and utility unused */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_3((SERDES_MDSP_PCBI_BASE_ADDR + lane_offset),
-                                                               d_iq_offset,
-                                                               FALSE,
-                                                               t_iq_offset,
-                                                               TRUE,
-                                                               0))
-                {
-                    /* calibration failed */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_3() failed\n");
-                    return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_3_FAILED);
-                }
-
-                /* run calibration and find direction to move offset */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_2((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                               iq_done,
-                                                               &iq_done,
-                                                               &iq_accum_reg_val))
-                {
-                    /* calibration failed */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_2() failed\n");
-                    return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_2_FAILED);
-                }
-
-                /* convert the iq_accum register value from unsigned 32-bit to signed 16-bit signed */
-                iq_accum = (INT16)iq_accum_reg_val;
-
-                /* do not check for convergence on first measurement */
-                if (FALSE == first_measurement)
-                {
-                    /* check for convergence, signaled by sign change */
-                    if (((prev_iq_accum < 0) && (iq_accum > 0)) ||
-                        ((prev_iq_accum > 0) && (iq_accum < 0)))
-                    {
-                        /* timing IQ phase has converged */
-                        break;
-                    }
-                }
-                else
-                {
-                    /* first measurement taken */
-                    first_measurement = FALSE;
-                }
-
-                /* move data offset accordingly */
-                if (iq_accum > 0)
-                {
-                    t_iq_offset += -1;
-                }
-                else if (iq_accum < 0)
-                {
-                    t_iq_offset += 1;
-                }
-
-                /* check if new correction offset is out of range */
-                if ((t_iq_offset < SERDES_IQ_MAX_NEGATIVE) ||
-                    (t_iq_offset > SERDES_IQ_MAX_POSITIVE))
-                {
-                    bc_printf("    timing IQ offset is out of range = %d\n", t_iq_offset);
-                    return (EXP_SERDES_TIMING_IQ_OFFSET_OUT_OF_RANGE);
-                }
-
-                /* record iq_accum for next comparison */
-                prev_iq_accum = iq_accum;
-            }
-
-            if (FALSE == SERDES_FH_IQ_Offset_Calibration_4(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset))
-            {
-                /* calibration2 failed */
-                bc_printf("    SERDES_FH_IQ_Offset_Calibration_4() failed\n");
-                return (EXP_SERDES_IQ_OFFSET_CALIBRATION_4_FAILED);
-            }
-        }
+        return;
     }
 
-    return (PMC_SUCCESS);
+    /* Start the periodic calibration */
+    sys_timer_last_cal = sys_timer_read();
+    serdes_cal_timer_init = TRUE;
+
+    bc_printf("Configure SerDes PRBS Continuous IQ Offset cal to run every %lu ms\n", SERDES_CAL_UPDATE_PERIOD_MS);
+
 }
-#else
-PUBLIC UINT32 serdes_plat_iq_offset_calibration(UINT8 lane_bitmask)
+
+/**
+* @brief
+*   Runs the periodic serdes calibration. This function should
+*   be polled. Calibration will be run every 
+*   SERDES_CAL_UPDATE_PERIOD_MS ms.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID serdes_plat_cal_update(VOID)
 {
-    INT32 d_iq_offset;
-    INT32 t_iq_offset;
-    UINT32 iq_accum_reg_val;
-    INT16 iq_accum;
-    INT16 prev_iq_accum;
-    UINT32 iq_done;
-    BOOL first_measurement;
-    UINT32 lane_offset = 0;
-    UINT32 convergence_iteration;
-    INT32 iq_field;
 
-    for (UINT32 test_loop = 0; test_loop < 10; test_loop++)
+    UINT32 rc;
+    UINT8 lane_bitmask;
+
+    UINT_TIME curr_time = sys_timer_read();
+
+    /*
+    ** Check initialization. Run the calibration if it's 
+    ** been longer than SERDES_CAL_UPDATE_PERIOD_MS.
+    */
+    if (serdes_cal_timer_init && !serdes_cal_timer_disable && 
+        sys_timer_count_to_us(sys_timer_diff(sys_timer_last_cal,curr_time)) > SERDES_CAL_UPDATE_PERIOD_MS * 1000) 
     {
-        bc_printf("\n\nTest Loop %d\n\n", test_loop);
+        sys_timer_last_cal = curr_time;
 
-        for (UINT32 current_lane = 0; current_lane < SERDES_LANES; current_lane++)
+        lane_bitmask = ech_lane_active_pattern_bitmask_get();
+        
+        rc = SERDES_FH_IQ_Offset_Calibration(lane_bitmask);
+
+        if (rc != PMC_SUCCESS)
         {
-            if (lane_bitmask & (1 << current_lane))
-            {
-                bc_printf("\n[%d] TWI_BOOT_CONFIG: serdes_plat_iq_offset_calibration()\n", current_lane);
-
-                /* set the offset for the lane being configured */
-                lane_offset = current_lane * SERDES_LANE_REG_OFFSET;
-
-                /* capture starting correction offsets */
-                d_iq_offset = serdes_api_d_iq_offset_read(lane_offset);
-                t_iq_offset = serdes_api_t_iq_offset_read(lane_offset);
-
-                bc_printf("    start d_iq_offset = 0x%02X = %d\n", d_iq_offset, d_iq_offset);
-                bc_printf("    start t_iq_offset = 0x%02X = %d\n", t_iq_offset, t_iq_offset);
-
-                /* select current lane data for offset correction */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                               SERDES_PI_PHGEN_IQCOR_CFG2_DATA_ENABLED_TIMING_DISABLED))
-                {
-                    /* calibration 1 failed */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_1() failed\n");
-                    return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_1_FAILED);
-                }
-
-#if 0
-                /* 
-                ** as per config guide initial value of iq_done = 1 
-                ** not needed, see modifications to SERDES_FH_IQ_Offset_Calibration_2() 
-                */
-                iq_done = 1;
-#endif
-
-                /* do not check for convergence on first measurement */
-                first_measurement = TRUE;
-
-                convergence_iteration = 0;
-                while (TRUE)
-                {
-                    /* set data and timing correction offsets, data calibration enabled, timing calibration disabled, and utility unused */
-                    if (FALSE == SERDES_FH_IQ_Offset_Calibration_3((SERDES_MDSP_PCBI_BASE_ADDR + lane_offset),
-                                                                   d_iq_offset,
-                                                                   TRUE,
-                                                                   t_iq_offset,
-                                                                   FALSE,
-                                                                   0))
-                    {
-                      /* calibration 3 failed */
-                      bc_printf("    SERDES_FH_IQ_Offset_Calibration_3() failed\n");
-                      return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_3_FAILED);
-                    }
-
-                    /* run calibration and find direction to move offset */
-                    if (FALSE == SERDES_FH_IQ_Offset_Calibration_2((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                                   iq_done,
-                                                                   &iq_done,
-                                                                   &iq_accum_reg_val))
-                    {
-                        /* calibration 2 failed */
-                        bc_printf("    SERDES_FH_IQ_Offset_Calibration_2() failed\n");
-                        return (EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_2_FAILED);
-                    }
-
-                    /* read the data IQ offset field from the register */
-                    iq_field = serdes_api_d_iq_offset_read(lane_offset);
-    	 	 	
-                    /* convert the iq_accum register value from unsigend 32-bit to signed 16-bit signed */
-                    iq_accum = (INT16)iq_accum_reg_val;
-
-                    bc_printf("    iteration = %d\n", convergence_iteration);
-                    bc_printf("    TR_CONFIG5_REG d_iq_offset = %d\n", iq_field);
-                    bc_printf("    iq_done = 0x%02X    ~iq_don = 0x%02X\n", iq_done, ~iq_done);
-                    bc_printf("    iq_accum_reg_val = 0x%08X = %d    iq_accum = 0x%04X = %d\n", 
-                              iq_accum_reg_val, iq_accum_reg_val, iq_accum, iq_accum);
-
-                    /* do not check for convergence on first measurement */
-                    if (FALSE == first_measurement)
-                    {
-                        bc_printf ("    prev_iq_accum = %d    iq_accum = %d\n", prev_iq_accum, iq_accum);
-
-                        /* check for convergence, signaled by sign change */
-                        if (((prev_iq_accum < 0) && (iq_accum > 0)) ||
-                            ((prev_iq_accum > 0) && (iq_accum < 0)))
-                        {
-                            bc_printf("    data IQ converged\n");
-                            bc_printf("    final lane [%d] d_iq_offset = %d\n", current_lane, d_iq_offset);
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        /* first measurement taken */
-                        first_measurement = FALSE;
-                    }
-
-                    /* move data offset accordingly */
-                    if (iq_accum > 0)
-                    {
-                        d_iq_offset += -1;
-                    }
-                    else if (iq_accum < 0)
-                    {
-                        d_iq_offset += 1;
-                    }
-                    bc_printf("    d_iq_offset = %d\n", d_iq_offset);
-
-                    /* check if new correction offset is out of range */
-                    if ((d_iq_offset < SERDES_IQ_MAX_NEGATIVE) ||
-                        (d_iq_offset > SERDES_IQ_MAX_POSITIVE))
-                    {
-                        bc_printf("    data IQ offset is out of range = %d\n", d_iq_offset);
-                        return (EXP_SERDES_DATA_IQ_OFFSET_OUT_OF_RANGE);
-                    }
-
-                    /* record iq_accum for next comparison */
-                    prev_iq_accum = iq_accum;
-                    convergence_iteration++;
-                }
-
-#if EXPLORER_HOST_SET_D_IQ_OFFSET == 1
-                if (ech_d_iq_offset_use_host_get() != 0)
-                {
-                    /* overwrite D_IQ phase convergence result with host value */
-                    bc_printf("    lane %u hardware converged data IQ phase offset = %d\n", 
-                              current_lane, d_iq_offset);
-                    bc_printf("    lane %u setting host specified IQ phase offset  = %d\n", 
-                              current_lane, ech_d_iq_offset_get(current_lane));
-
-                    /* use host values to set register field */
-                    serdes_api_d_iq_offset_write(lane_offset, ech_d_iq_offset_get(current_lane));
-                }
-#endif
-
-                /* select timing for offset correction */
-                if (FALSE == SERDES_FH_IQ_Offset_Calibration_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                               SERDES_PI_PHGEN_IQCOR_CFG2_DATA_DISABLED_TIMING_ENABLED))
-                {
-                    /* calibration 1 failed  */
-                    bc_printf("    SERDES_FH_IQ_Offset_Calibration_1() failed\n");
-                    return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_1_FAILED);
-                }
-
-#if 0
-                /* 
-                ** as per config guide initial value of iq_done = 1 
-                ** not needed, see modifications to SERDES_FH_IQ_Offset_Calibration_2() 
-                */
-                iq_done = 1;
-#endif
-
-                /* do not check for convergence on first measurement */
-                first_measurement = TRUE;
-
-                convergence_iteration = 0;
-                while (TRUE)
-                {
-                    /* set data and timing correction offsets, timing calibration enabled, data calibration disabled, and utility unused */
-                    if (FALSE == SERDES_FH_IQ_Offset_Calibration_3((SERDES_MDSP_PCBI_BASE_ADDR + lane_offset),
-                                                                    d_iq_offset,
-                                                                    FALSE,
-                                                                    t_iq_offset,
-                                                                    TRUE,
-                                                                    0))
-                    {
-                      /* calibration 3 failed  */
-                      bc_printf("    SERDES_FH_IQ_Offset_Calibration_3() failed\n");
-                      return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_3_FAILED);
-                    }
-
-                    /* run calibration and find direction to move offset */
-                    if (FALSE == SERDES_FH_IQ_Offset_Calibration_2((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                                                   iq_done,
-                                                                   &iq_done,
-                                                                   &iq_accum_reg_val))
-                    {
-                        /* calibration 2 failed  */
-                        bc_printf("    SERDES_FH_IQ_Offset_Calibration_2() failed\n");
-                        return (EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_2_FAILED);
-                    }
-
-                    /* read the timing IQ offset field from the register */
-                    iq_field = serdes_api_t_iq_offset_read(lane_offset);
-    	 	 	
-                    /* convert the iq_accum register value from unsigend 32-bit to signed 16-bit signed */
-                    iq_accum = (INT16)iq_accum_reg_val;
-
-                    bc_printf("    iteration = %d\n", convergence_iteration);
-                    bc_printf("    TR_CONFIG5_REG t_iq_offset = %d\n", iq_field);
-                    bc_printf("    iq_done = 0x%02X    ~iq_done = 0x%02X\n", iq_done, ~iq_done);
-                    bc_printf("    iq_accum_reg_val = 0x%08X = %d    iq_accum = 0x%04X = %d\n",
-                              iq_accum_reg_val, iq_accum_reg_val, iq_accum, iq_accum);
-
-                    /* do not check for convergence on first measurement */
-                    if (FALSE == first_measurement)
-                    {
-                        bc_printf ("    prev_iq_accum = %d    iq_accum = %d\n", prev_iq_accum, iq_accum);
-
-                        /* check for convergence, signaled by sign change */
-                        if (((prev_iq_accum < 0) && (iq_accum > 0)) ||
-                            ((prev_iq_accum > 0) && (iq_accum < 0)))
-                        {
-                            bc_printf("    timing IQ converged\n");
-                            bc_printf("    final lane [%d] t_iq_offset = %d\n", current_lane, t_iq_offset);
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        /* first measurement taken */
-                        first_measurement = FALSE;
-                    }
-
-                    /* move data offset accordingly */
-                    if (iq_accum > 0)
-                    {
-                        t_iq_offset += -1;
-                    }
-                    else if (iq_accum < 0)
-                    {
-                        t_iq_offset += 1;
-                    }
-                    bc_printf("    t_iq_offset = %d\n", t_iq_offset);
-
-                    /* check if new correction offset is out of range */
-                    if ((t_iq_offset < SERDES_IQ_MAX_NEGATIVE) ||
-                        (t_iq_offset > SERDES_IQ_MAX_POSITIVE))
-                    {
-                        bc_printf("    timing IQ offset is out of range = %d\n", t_iq_offset);
-                        return (EXP_SERDES_TIMING_IQ_OFFSET_OUT_OF_RANGE);
-                    }
-
-                    /* record iq_accum for next comparison */
-                    prev_iq_accum = iq_accum;
-                    convergence_iteration++;
-                }
-            }
-
-            if (FALSE == SERDES_FH_IQ_Offset_Calibration_4(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset))
-            {
-                /* calibration 4 failed  */
-                bc_printf("    SERDES_FH_IQ_Offset_Calibration_4() failed\n");
-                return (EXP_SERDES_IQ_OFFSET_CALIBRATION_4_FAILED);
-            }
+            /* Use doorbell 3 to indicate a failure to the host */
+            bc_printf("SERDES_FH_IQ_Offset_Calibration failed: ERR!!! rc=0x%x\n",rc);
+            ocmb_erep_db_ring(ocmb_erep_db_3);
         }
+
     }
 
-    return (PMC_SUCCESS);
 }
-#endif
+
+/**
+* @brief
+*   Disables/re-enables the periodic serdes calibration.
+* 
+* @param [in] cal_disable: TRUE - Disable serdes periodic cal.
+*        FALSE Enable periodic cal.
+*  
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID serdes_plat_cal_disable(BOOL cal_disable)
+{
+    serdes_cal_timer_disable = cal_disable;
+}
 
 /**
 * @brief
@@ -1118,7 +677,11 @@ PUBLIC UINT32 serdes_plat_iq_offset_calibration(UINT8 lane_bitmask)
 *
 * @param [in] dfe_state:   TRUE=DFE enabled; FALSE=DFE disabled 
 * @param [in] adapt_state: TRUE=Adaptation enabled; FALSE=Adaptation disabled 
-* @param [in] lane_bitmask: Bitmask for the Serdes lanes, which will be initialized
+* @param [in] lane_bitmask: Bitmask for the Serdes lanes, which will be initialized 
+* @param [in] force_start: TRUE=Force the adaptation, used if
+*        this function is called during boot config 0. FALSE=Do
+*        not force the adaptation, used if this function is
+*        called during boot config 1.
 *  
 * @return
 *   PMC_SUCCESS for SUCCESS, otherwise error codes.
@@ -1126,7 +689,7 @@ PUBLIC UINT32 serdes_plat_iq_offset_calibration(UINT8 lane_bitmask)
 * @note
 * 
 */
-PUBLIC UINT32 serdes_plat_adapt_step1(BOOL dfe_state, BOOL adpt_state, UINT8 lane_bitmask)
+PUBLIC UINT32 serdes_plat_adapt_step1(BOOL dfe_state, BOOL adpt_state, UINT8 lane_bitmask, BOOL force_start)
 {
     UINT32 i;
     UINT32 lane_offset  = 0;
@@ -1141,31 +704,49 @@ PUBLIC UINT32 serdes_plat_adapt_step1(BOOL dfe_state, BOOL adpt_state, UINT8 lan
 
             if( (FALSE == dfe_state)  && (FALSE == adpt_state) )
             {
-                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_adaptation_disable \n",i);
-                rc = SERDES_FH_TXRX_Adaptation1_FW_adaptation_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
-                                                                      SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_start_adaptation_disable \n",i);
+                rc = SERDES_FH_TXRX_Adaptation1_FW_start_adaptation_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                            SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
             }
 
             else if( (FALSE == dfe_state)  && (TRUE == adpt_state) )
             {
+                if (force_start) 
+                {
+                    bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_Force_start_dfe_disable \n", i);
+                    rc = SERDES_FH_TXRX_Adaptation1_Force_start_dfe_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                   SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                }
+                else
+                {
+                    bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_start_dfe_disable \n", i);
+                    rc = SERDES_FH_TXRX_Adaptation1_FW_start_dfe_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                         SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                }
 
-                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_dfe_disable \n",i);
-                rc = SERDES_FH_TXRX_Adaptation1_FW_dfe_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
-                                                               SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
             }
 
             else if( (TRUE == dfe_state)  && (FALSE == adpt_state) )
             {
 
-                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_adaptation_disable \n",i);
-                rc = SERDES_FH_TXRX_Adaptation1_FW_adaptation_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
-                                                                      SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_start_adaptation_disable \n",i);
+                rc = SERDES_FH_TXRX_Adaptation1_FW_start_adaptation_disable(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                            SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
             }
             else
             {
-                bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_normal \n",i);
-                rc = SERDES_FH_TXRX_Adaptation1_FW_normal(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
-                                                          SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                if (force_start) 
+                {
+                    bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_Force_start_normal \n", i);
+                    rc = SERDES_FH_TXRX_Adaptation1_Force_start_normal(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                       SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                }
+                else
+                {
+                    bc_printf("[%d] Calling SERDES_FH_TXRX_Adaptation1_FW_start_normal \n", i);
+                    rc = SERDES_FH_TXRX_Adaptation1_FW_start_normal(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                                    SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+                }
             }
             if (TRUE != rc)
             {
@@ -1299,22 +880,21 @@ PUBLIC UINT32 serdes_plat_low_level_init(UINT8 lane_bitmask,
                                          UINT32 frequency,
                                          BOOL dfe_state)
 {
-    UINT32 i;
+    UINT32 current_lane;
     UINT32 rc;
-    UINT32 lane_offset = 0;
 
     /* deassert serdes reset */
     top_exp_cfg_deassert_serdes_reset(TOP_XCBI_BASE_ADDR);
 
     serdes_plat_initialized_set(TRUE);
 
-    for (i = 0; i < SERDES_LANES; i++)
+    for (current_lane = 0; current_lane < SERDES_LANES; current_lane++)
     {
-        if (lane_bitmask & (1 << i))
+        if (lane_bitmask & (1 << current_lane))
         {
-            bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_1\n", i);
+            bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_1\n", current_lane);
             /* apply the first initialization sequence on all lanes */
-            rc = serdes_plat_low_level_init_sequence_1(i, frequency);
+            rc = serdes_plat_low_level_init_sequence_1(current_lane, frequency);
 
             if (PMC_SUCCESS != rc)
             {
@@ -1324,15 +904,15 @@ PUBLIC UINT32 serdes_plat_low_level_init(UINT8 lane_bitmask,
     }
 
     /* apply the second initialization sequence on all lanes */
-    for (i = 0; i < SERDES_LANES; i++)
+    for (current_lane = 0; current_lane < SERDES_LANES; current_lane++)
     {
-        if (lane_bitmask & (1 << i))
+        if (lane_bitmask & (1 << current_lane))
         {
-            bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_2\n", i);
-            rc = serdes_plat_low_level_init_sequence_2(i, dfe_state);
+            bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_2\n", current_lane);
+            rc = serdes_plat_low_level_init_sequence_2(current_lane, dfe_state);
             if (PMC_SUCCESS != rc)
             {
-                bc_printf("[%d] serdes_plat_low_level_init_sequence_2 failed", i);
+                bc_printf("[%d] serdes_plat_low_level_init_sequence_2 failed", current_lane);
                 return (rc);
             }
         }
@@ -1347,60 +927,25 @@ PUBLIC UINT32 serdes_plat_low_level_init(UINT8 lane_bitmask,
     {
         bc_printf("TWI_BOOT_CONFIG: DDLL Lock error \n");
         return EXP_SERDES_DDLL_LOCK_FAIL;
-        
+
     }
     bc_printf("TWI_BOOT_CONFIG: DDLL Init End\n");
 
-    
     bc_printf("Deasserting OCMB...\n");
-    
+
     /* apply top-level OCMB PHY reset */
     if (FALSE == top_exp_cfg_deassert_phy_ocmb_reset(TOP_XCBI_BASE_ADDR))
     {
         bc_printf("Deasserting OCMB...FAILED\n");
+
         /* 
         ** OCMB reset deassertion failed 
         */            
         return EXP_SERDES_DEASSERT_PHY_OCMB_RESET_FAIL;
     }
-    
+
     bc_printf("Deasserting OCMB...DONE\n");
-    
-    /* initialize lane alignment part 1 to all lanes*/
-    for (i = 0; i < SERDES_LANES; i++)
-    {
-        if (lane_bitmask & (1 << i))
-        {
-            /* set the offset for the lane being configured */
-            lane_offset = i * SERDES_LANE_REG_OFFSET;
-            rc = SERDES_FH_alignment_init_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                                   (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset), TRUE);
-            if (TRUE != rc)
-            {
-                bc_printf("[%d] EXP_SERDES_FH_ALIGNMENT1_FAILED\n", i);
-                return EXP_SERDES_FH_ALIGNMENT_INIT_1_FAIL;
-            }
-        }
-    }
-    
-    for (i = 0; i < SERDES_LANES; i++)
-    {
-        if (lane_bitmask & (1 << i))
-        {
-            /* set the offset for the lane being configured */
-            lane_offset = i * SERDES_LANE_REG_OFFSET;
-            /* initialize lane alignment part 2 on all lanes except master lane 4 */
-            if (i != SERDES_LANE_4)
-            {
-                rc = SERDES_FH_TX_alignment(SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset);
-                if (TRUE != rc)
-                {
-                    bc_printf("[%d] EXP_SERDES_FH_TX_ALIGNMENT_FAIL\n", i);
-                    return EXP_SERDES_FH_TX_ALIGNMENT_FAIL;
-                }
-            }
-        }
-    }
+
     return (PMC_SUCCESS);
 }
 
@@ -1410,23 +955,34 @@ PUBLIC UINT32 serdes_plat_low_level_init(UINT8 lane_bitmask,
 *
 * @param [in] lane_bitmask: Bitmask for the Serdes lanes, which will be initialized
 * @param [in] lane_pattern_bitmask: Bitmask for the Serdes lanes to check rx pattern
-*  
+* 
+* @param [out] lane_pattern_bitmask: Bitmask of the lane
+*        configuration
+* 
 * @return
 *   PMC_SUCCESS for SUCCESS, otherwise error codes.
 * 
 * @note
 * 
 */
-PUBLIC UINT32 serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 lane_pattern_bitmask)
+PUBLIC UINT32 serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 * lane_pattern_bitmask)
 {   
     UINT32 lane_offset  = 0;    
     UINT32 i;    
     BOOL rc;
+    top_plat_lock_struct lock_struct;
 
     bc_printf(" serdes_plat_lane_inversion_config: Sending Pattern A ..\n");
     
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     /* Send Pattern A */
     ocmb_cfg_SendPatA(OCMB_REGS_BASE_ADDR);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct); 
+
     /* Making sure that HOST has enough time to detect Pattern A */
     sys_timer_busy_wait_us(10000);
 
@@ -1445,17 +1001,29 @@ PUBLIC UINT32 serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 lane_p
             }
         }
     }
-
     
     bc_printf(" serdes_plat_lane_inversion_config: Sending Pattern B to HOST ..\n");
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     /* Send Pattern B back to the HOST*/
     ocmb_cfg_SendPatB(OCMB_REGS_BASE_ADDR);      
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
+
     /* Making sure that HOST has enough time to detect Pattern B */
     sys_timer_busy_wait_us(10000);
 
     bc_printf(" serdes_plat_lane_inversion_config: waiting for Rx Pattern B ..\n");
-    /* Wait for Pattern B*/
+
+    /* Wait for Pattern B. Pass the configured bitmask so that the
+    ** same check can be performed as in ocmb_cfg_RxPatA
+    */
+    *lane_pattern_bitmask = lane_bitmask;
     rc = ocmb_cfg_RxPatB(OCMB_REGS_BASE_ADDR, lane_pattern_bitmask);
+
     if (TRUE != rc)
     {    
         bc_printf(" serdes_plat_lane_inversion_config:ocmb_cfg_RxPatB Timeout\n");
@@ -1465,6 +1033,94 @@ PUBLIC UINT32 serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 lane_p
     return (PMC_SUCCESS);
 }
 
+/**
+* @brief
+ *  FW function to enable PRBS23 monitoring
+ *  Check that the pattern monitor is locked. If it is not
+ *  locked on a lane, try inverting it to compensate for boards
+ *  where lanes could be inverted
+*
+* @param [in] lane_bitmask: Bitmask for the Serdes lanes, which will be initialized 
+* @param [in] ber_dwell_ms: Number of ms to accumulate bit  
+*       errors
+* @param [in] ber_per_ms_threshold: Threshold of bit errors per 
+*       ms. If BER is less than this threshold, the pattern
+*       monitor is considered locked
+* @param [out] *pattmon_detected_bitmask: Pointer where a 
+*       bitmask of the lanes which locked will be returned
+*  
+* @return
+*   PMC_SUCCESS for SUCCESS, otherwise error codes.
+* 
+* @note
+* 
+*/
+PUBLIC UINT32 serdes_plat_pattmon_config(UINT8 lane_bitmask, UINT32 ber_dwell_ms, UINT32 ber_per_ms_threshold, UINT8 * pattmon_detected_bitmask)
+{   
+
+    UINT32 user_pattern[10] = { 0 };
+    UINT32 meas_err_cnt[SERDES_LANES];
+    UINT32 meas_err_cnt_per_ms[SERDES_LANES];
+    UINT32 pattmon_detected_lanes = 0;
+    UINT32 lane_offset;
+    UINT32 current_lane;
+
+    *pattmon_detected_bitmask = 0x00;
+
+    /* Run two loops, inverting after the first if necessary */
+    for (UINT32 pattmon_test = 0; pattmon_test < 2; pattmon_test++) 
+    {
+        /* Enable the pattern monitor */
+        for (current_lane = 0; current_lane < SERDES_LANES; current_lane++)
+        {
+            if (lane_bitmask & (1 << current_lane))
+            {
+                /* set the offset for the lane being configured */
+                lane_offset = current_lane * SERDES_LANE_REG_OFFSET;
+
+                SERDES_FH_pattmon_en((SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset),
+                                     5,
+                                     user_pattern);
+            }
+        }
+
+        /* Measure errors on the lanes */
+        SERDES_FH_Meas_BER_Linking(lane_bitmask,
+                                   ber_dwell_ms,
+                                   meas_err_cnt,
+                                   meas_err_cnt_per_ms);
+
+        for (current_lane = 0; current_lane < SERDES_LANES; current_lane++)
+        {
+            if (lane_bitmask & (1 << current_lane))
+            {
+                if (meas_err_cnt_per_ms[current_lane] > ber_per_ms_threshold && pattmon_test > 0) 
+                {
+                    /* The pattern monitor did not detect PRBS in non-inverted or inverted */
+                    bc_printf("    WARNING: Pattern monitor did not detect PRBS on lane %lu\n", current_lane);
+                }
+                else if (meas_err_cnt_per_ms[current_lane] > SERDES_BER_21G33_PER_MS_1e_4 && 0 == pattmon_test) 
+                {
+                    /* Invert the pattern monitor and try again */
+                    bc_printf("    Inverting PRBS monitor on lane %lu\n", current_lane);
+
+                    lane_offset = current_lane * SERDES_LANE_REG_OFFSET;
+                    serdes_api_lane_invert_set(lane_offset);
+                }
+                else if (meas_err_cnt_per_ms[current_lane] < SERDES_BER_21G33_PER_MS_1e_4 && pattmon_test > 0) 
+                {
+                    *pattmon_detected_bitmask |= (1 << current_lane);
+                    pattmon_detected_lanes++;
+                }
+            }
+        }
+    }
+
+    bc_printf("    PRBS monitor detecting PRBS on %lu lanes 0x%02x\n", pattmon_detected_lanes, *pattmon_detected_bitmask);
+
+    return PMC_SUCCESS;
+
+}
 
 /**
 * @brief
@@ -1482,7 +1138,6 @@ PUBLIC UINT32 serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 lane_p
 PUBLIC UINT32 serdes_plat_low_level_standalone_init(UINT8 lane_bitmask, BOOL dfe_state)
 {
     UINT32 lane_offset  = 0;
-    UINT32 obj_en_pass3;
     UINT32 i;    
     UINT32 patt[10];
     UINT32 rc;
@@ -1506,22 +1161,18 @@ PUBLIC UINT32 serdes_plat_low_level_standalone_init(UINT8 lane_bitmask, BOOL dfe
             }
         }
     }    
+    /* Start adaption for lane 4 only.*/
     if (dfe_state)
     {
-        /* DFE enabled. */
-        obj_en_pass3 = 0xa6c;
+        rc = SERDES_FH_TXRX_Adaptation1_Force_start_normal(SERDES_ADSP_PCBI_BASE_ADDR + (4 * SERDES_LANE_REG_OFFSET),
+                                                           SERDES_MTSB_CTRL_PCBI_BASE_ADDR + (4 * SERDES_LANE_REG_OFFSET));
     }
     else
     {
-        /* DFE disabled. */
-        obj_en_pass3 = 0x80c;
+        rc = SERDES_FH_TXRX_Adaptation1_Force_start_dfe_disable(SERDES_ADSP_PCBI_BASE_ADDR + (4 * SERDES_LANE_REG_OFFSET),
+                                                                SERDES_MTSB_CTRL_PCBI_BASE_ADDR + (4 * SERDES_LANE_REG_OFFSET));
     }
-        
-    /* Start adaption for lane 4 only.*/
-    rc = SERDES_FH_TXRX_Adaptation1_PE(SERDES_ADSP_PCBI_BASE_ADDR + 4 * SERDES_LANE_REG_OFFSET,
-                                       SERDES_MDSP_PCBI_BASE_ADDR + 4 * SERDES_LANE_REG_OFFSET,
-                                       SERDES_MTSB_CTRL_PCBI_BASE_ADDR + 4 * SERDES_LANE_REG_OFFSET,
-                                       obj_en_pass3);
+
     if (TRUE != rc)
     {
         bc_printf("[%d] SERDES_FH_TXRX_ADAPTATION_1_PE_FAIL \n", 4);
@@ -1546,10 +1197,8 @@ PUBLIC UINT32 serdes_plat_low_level_standalone_init(UINT8 lane_bitmask, BOOL dfe
             /* set the offset for the lane being configured */
             lane_offset = i * SERDES_LANE_REG_OFFSET;
 
-            rc = SERDES_FH_TXRX_Adaptation1_PE(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
-                                               SERDES_MDSP_PCBI_BASE_ADDR + lane_offset,
-                                               SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset,
-                                               obj_en_pass3);
+            rc = SERDES_FH_TXRX_Adaptation1_Force_start_normal(SERDES_ADSP_PCBI_BASE_ADDR + lane_offset,
+                                                               SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
             if (TRUE != rc)
             {
                 bc_printf("[%d] SERDES_FH_TXRX_ADAPTATION_1_PE_FAIL (step 1)\n", i);
@@ -1650,7 +1299,7 @@ PUBLIC UINT8 serdes_plat_loopback_test(UINT8 lane_bitmask)
 */
 PUBLIC VOID serdes_plat_crash_dump_register(VOID)
 {
-    crash_dump_register("SERDES_REGS", &serdes_dump_debug_info, CRASH_DUMP_ASCII, SERDES_REG_CRASH_DUMP_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_0, "SERDES_REGS", &serdes_dump_debug_info, CRASH_DUMP_ASCII, SERDES_REG_CRASH_DUMP_SIZE);
 }
 
 /**
@@ -1745,6 +1394,36 @@ PUBLIC UINT32 serdes_plat_ffe_postcursor_get(VOID)
 PUBLIC VOID serdes_plat_ffe_postcursor_set(UINT32 postcursor)
 {
     serdes_ffe_postcursor = postcursor;
+}
+
+/**
+* @brief
+*    Get SERDES FFE post-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC UINT32 serdes_plat_ffe_calibration_get(VOID)
+{
+    return serdes_ffe_calibration;
+}
+
+/**
+* @brief
+*    Set SERDES FFE post-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC VOID serdes_plat_ffe_calibration_set(UINT32 calibration)
+{
+    serdes_ffe_calibration = calibration;
 }
 
 /** @} end group */

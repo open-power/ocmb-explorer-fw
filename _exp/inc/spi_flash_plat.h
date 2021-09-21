@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -90,9 +90,9 @@
 #define SPI_FLASH_FW_FW_UPGRADE_ADDR               (SPI_FLASH_FW_IMG_B_CFG_LOG_ADDR + SPI_FLASH_FW_IMG_B_CFG_LOG_SIZE)
 #define SPI_FLASH_FW_FW_UPGRADE_SIZE               (1024 * 1024)
 #define SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_ADDR (SPI_FLASH_FW_FW_UPGRADE_ADDR + SPI_FLASH_FW_FW_UPGRADE_SIZE)
-#define SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE (1024 * 1024)
+#define SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE (256 * 1024)
 #define SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_ADDR (SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_ADDR + SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE)
-#define SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_SIZE (1024 * 1024)
+#define SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_SIZE (256 * 1024)
 #define SPI_FLASH_UNUSED_ADDR                      (SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_ADDR + SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_SIZE)
 #define SPI_FLASH_UNUSED_SIZE                      (504 * 1024)
 #define SPI_FLASH_FW_END_ADDR                      (SPI_FLASH_UNUSED_ADDR + SPI_FLASH_UNUSED_SIZE)
@@ -113,10 +113,45 @@
 #define SPI_FLASH_PARTITION_NUMBER          2
 
 
+/** 
+*  @brief 
+*   SPI flash platform authentication info struct
+*   
+*   This can be passed to the host as diagnostic information
+*   
+*   @note
+*       Index 0 is image A and index 1 is image B
+*/
+
+typedef struct
+{
+    UINT8 active_image_index;                                   /**< The active image */
+    UINT8 red_image_index;                                      /**< The redundant image */
+    UINT8 failed_authentication[SPI_FLASH_PARTITION_NUMBER];    /**< 
+                                                                * Set to 1 to indicate the image 
+                                                                * failed authentication 
+                                                                */
+    UINT8 uecc_detected[SPI_FLASH_PARTITION_NUMBER];            /**< 
+                                                                * Set to 1 if UECC detected when 
+                                                                * authenticating or copying image 
+                                                                */
+    UINT8 uecc_compare;                                         /**< 
+                                                                * Set to 1 if UECC detected when 
+                                                                * comparing active and redundant images 
+                                                                */
+    UINT8 image_updated;                                        /**< 
+                                                                * Set to 1 to indicate FW successfully 
+                                                                * overwrote an image that failed 
+                                                                * authentication or was out of date 
+                                                                */
+} spi_flash_plat_auth_info_struct;
+
 /*
 ** Function Prototypes
 */
 EXTERN VOID spi_flash_plat_red_fw_image_update(VOID);
+EXTERN PMCFW_ERROR spi_flash_plat_erase(UINT8* spi_flash_addr_ptr, UINT32 num_bytes);
+EXTERN VOID spi_flash_plat_image_info_get(spi_flash_plat_auth_info_struct * spi_flash_plat_auth_info);
 
 #endif /* _SPI_FLASH_PLAT_H */
 

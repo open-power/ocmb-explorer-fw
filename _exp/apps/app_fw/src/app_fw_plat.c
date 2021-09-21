@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -42,13 +42,15 @@
 #include "crash_dump.h"
 #include "top.h"
 #include "ccb_plat.h"
+#include "ocmb_erep.h"
+#include "top_plat.h"
 
 /*
 * Local Constants
 */
 
-#define APP_FW_RESET_INFO_CRASH_SIZE 0x10000
-#define APP_FW_RUNTIME_CCB_CRASH_SIZE 0x10000
+#define APP_FW_RESET_INFO_CRASH_SIZE    (4*1024)
+#define APP_FW_RUNTIME_CCB_CRASH_SIZE   (4*1024)
 
 /*
 ** Private Variables
@@ -63,6 +65,40 @@ PRIVATE BOOL app_fw_di_enabled = FALSE;
 /*
 * Private Functions
 */
+
+
+/**
+* @brief
+*   Creates OCMB error information for ASSERTs.
+*
+* @param[in] error_code - The ASSERT error code to pass to the
+*       Host for reporting purposes.
+*   
+* @note
+*
+*/
+PRIVATE void app_fw_assert_cb(void* error_code)
+{
+    ocmb_erep_ext_err_struct ocmb_assert_info;
+
+    /*
+    ** Fill in the extended error information.
+    */
+    ocmb_assert_info.info_filled_flag    = TRUE;
+    ocmb_assert_info.err_type            = ocmb_erep_type_fw_assert;
+    ocmb_assert_info.multiple_found_flag = FALSE;
+    ocmb_assert_info.sub_category        = OCMB_EREP_SUB_CATEGORY_DONT_CARE;
+    ocmb_assert_info.reg_offset          = OCMB_EREP_REG_OFFSET_DONT_CARE;
+    ocmb_assert_info.err_data            = (UINT32)error_code;
+
+    /*
+    ** 1. Fill the extended error information for the Host.
+    ** 2. Ring doorbell 2 to let the Host know this is an ASSERT with extended error info.
+    */
+    ocmb_erep_ext_err_fill(ocmb_assert_info);
+    ocmb_erep_db_ring(ocmb_erep_db_2);
+}
+
 
 /**
 * @brief
@@ -202,13 +238,19 @@ PUBLIC void app_fw_plat_flash_info_get(UINT32 *flash_id, UINT32 *flash_sector_si
     UINT16 dev_id;
     PMCFW_ERROR rc;    
     spi_flash_dev_enum dev;
+
+    top_plat_lock_struct lock_struct;
     
     /* SPI flash device info */
     spi_flash_dev_info_struct spi_dev_info;
+
+    top_plat_critical_region_enter(&lock_struct);
     
     rc = spi_flash_vendor_ids_get(SPI_FLASH_PORT, SPI_FLASH_CS, &manuf_id, &dev_id);    
     PMCFW_ASSERT(rc == PMC_SUCCESS, APP_FW_ERR_FLASH_ID_GET);
     *flash_id = manuf_id << sizeof(dev_id) | dev_id;
+
+    top_plat_critical_region_exit(lock_struct);
 
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
@@ -216,7 +258,6 @@ PUBLIC void app_fw_plat_flash_info_get(UINT32 *flash_id, UINT32 *flash_sector_si
                                 &dev,
                                 &spi_dev_info);
     PMCFW_ASSERT(rc == PMC_SUCCESS, APP_FW_ERR_DEV_INFO_GET);
-
 
     *flash_sector_size = spi_dev_info.subsectors_per_sector * spi_dev_info.pages_per_subsector *
                          spi_dev_info.page_size;
@@ -249,9 +290,10 @@ PUBLIC void app_fw_reset_init()
     reset_parms.fatal_cli_cback_ptr = NULL;
 
     reset_init(&reset_parms);
+    reset_assertion_cback_register(app_fw_assert_cb);
 
-    crash_dump_register("RESET_INFO", &reset_info_print, CRASH_DUMP_ASCII, APP_FW_RESET_INFO_CRASH_SIZE);
-    crash_dump_register("CCB", &ccb_plat_runtime_crash_dump, CRASH_DUMP_ASCII, APP_FW_RUNTIME_CCB_CRASH_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_0, "RESET_INFO", &reset_info_print, CRASH_DUMP_ASCII, APP_FW_RESET_INFO_CRASH_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_0, "CCB", &ccb_plat_runtime_crash_dump, CRASH_DUMP_ASCII, APP_FW_RUNTIME_CCB_CRASH_SIZE);
 }
 
 

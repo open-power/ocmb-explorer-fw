@@ -57,7 +57,7 @@
 */
 
 EXTERN void ddr_phy_fatal_error_handler(void);
-
+EXTERN void ddr_phy_non_fatal_error_handler(void);
 
 #endif /* _DDR_PHY_FATAL_H */
 

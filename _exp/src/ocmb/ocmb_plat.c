@@ -32,14 +32,17 @@
 #include "exp_opencapi_dump.h"
 #include "crash_dump.h"
 #include "ocmb_plat.h"
+#include "top_plat.h"
 
 /*
 ** Constants
 */
 
-#define OCMB_REG_CRASH_DUMP_SIZE 0x80000
-
-#define INT_SR_REG_INT_ENABLE_BIT   0x00000001
+/*
+** Empirically determined that the size is 0x22c6 bytes. 
+** Therefore set this to 9KB for some room to grow in the future. 
+*/
+#define OCMB_REG_CRASH_DUMP_SIZE    (9*1024)
 
 /*
 ** Local Variables
@@ -48,15 +51,6 @@
 /*
 ** Global Variables
 */
-
-/* used for storing/restoring interrupt status */
-PRIVATE UINT32 ocmb_plat_int_status;
-
-/* used for storing/restoring MTC status */
-PRIVATE UINT32 ocmb_plat_mtc_status;
-
-/* used for storing/restoring VPE status */
-PRIVATE UINT32 ocmb_plat_vpe_status;
 
 /*
 ** Local Functions
@@ -78,7 +72,7 @@ PRIVATE UINT32 ocmb_plat_vpe_status;
 */
 PUBLIC void ocmb_plat_crash_dump_register(void)
 {
-    crash_dump_register("OCMB_REGS", &exp_opencapi_dump_debug_info, CRASH_DUMP_ASCII, OCMB_REG_CRASH_DUMP_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_0, "OCMB_REGS", &exp_opencapi_dump_debug_info, CRASH_DUMP_ASCII, OCMB_REG_CRASH_DUMP_SIZE);
 }
 
 /****************************************************************************
@@ -104,82 +98,23 @@ PUBLIC void ocmb_plat_crash_dump_register(void)
 *****************************************************************************/
 PUBLIC BOOL ocmb_init(void)
 {
+    top_plat_lock_struct lock_struct;
+
     /* disable interrupts and disable multi-VPE operation */
-    ocmb_plat_critical_region_enter();
+    top_plat_critical_region_enter(&lock_struct);
 
     /* Execute DLx config guide. */
     if (ocmb_cfg_DLx_config_FW(OCMB_REGS_BASE_ADDR) == FALSE)
     {
         /* restore interrupts and enable multi-VPE operation */
-        ocmb_plat_critical_region_exit();
+        top_plat_critical_region_exit(lock_struct);
 
         return FALSE;
     }
 
     /* restore interrupts and enable multi-VPE operation */
-    ocmb_plat_critical_region_exit();
+    top_plat_critical_region_exit(lock_struct);
 
     return TRUE;
-}
-
-/**
-* @brief
-*   Prepare to enter critical region so 64-bit OCMB registers
-*   can be accessed without interference from other VPEs or
-*   interrupts.
-*
-*   Disable interrupts and multi-VPE operation.
-*
-* @return
-*   None.
-*
-* @note
-*
-*/
-PUBLIC void ocmb_plat_critical_region_enter(void)
-{
-    /* disable interrupts */
-    ocmb_plat_int_status = hal_int_global_disable();
-
-    /* disable VPE */
-    ocmb_plat_vpe_status = hal_disable_mvpe();
-
-    /* disable MTC */
-    ocmb_plat_mtc_status = hal_disable_mtc();
-}
-
-/**
-* @brief
-*   Prepare to exit critical region so 64-bit OCMB registers can
-*   be accessed without interference from other VPEs or
-*   interrupts.
-*
-*   Enable interrupts and multi-VPE operation.
-*
-* @return
-*   None.
-*
-* @note
-*
-*/
-PUBLIC void ocmb_plat_critical_region_exit(void)
-{
-    /* restore MTC */
-    hal_restore_mtc(ocmb_plat_mtc_status);
-
-    /* resume other VPE */
-    hal_restore_mvpe(ocmb_plat_vpe_status);
-
-    /* 
-    ** if interrupts were previously enabled, re-enable interrupts 
-    ** NOTE: do not use hal_int_global_restore() as it is not PIC compliant 
-    */ 
-    if (INT_SR_REG_INT_ENABLE_BIT == (ocmb_plat_int_status & INT_SR_REG_INT_ENABLE_BIT))
-    {
-        /* interrupts were previously enabled */
-
-        /* re-enable interrupts */
-        hal_int_global_enable();
-    }
 }
 

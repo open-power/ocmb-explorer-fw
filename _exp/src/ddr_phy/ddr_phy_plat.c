@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -44,6 +44,7 @@
 #include "crash_dump.h"
 #include "ddr_phy_dump.h"
 #include "app_fw_ddr.h"
+#include "ddr_phy_plat.h"
 
 
 /*
@@ -64,7 +65,9 @@
 ** Private Data
 */
 
-#define DDRPHY_REG_CRASH_DUMP_SIZE 0x80000
+#define DDRPHY_REG_SET1_CRASH_DUMP_SIZE     (10*1024)
+#define DDRPHY_REG_SET2_CRASH_DUMP_SIZE     (64*1024)
+#define DDRPHY_REG_SET3_CRASH_DUMP_SIZE     (64*1024)
 
 PRIVATE BOOL ddr_phy_initialized = FALSE;
 
@@ -96,7 +99,7 @@ PRIVATE VOID ddr_phy_step_by_step_init_command_handler(VOID)
 */
 PRIVATE VOID ddr_phy_init_command_handler(VOID)
 {
-    BOOL error_status = FALSE;
+    UINT8 error_status = PMC_SUCCESS;
     UINT32 ext_error_code = PMC_SUCCESS;
     UINT8  error_code = DDR_PHY_INIT_RESP_SUCCESS;
     exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();
@@ -111,7 +114,18 @@ PRIVATE VOID ddr_phy_init_command_handler(VOID)
                  (ext_data_size >= sizeof(user_response_msdg_t)),
                  DDR_FW_ERR_API_EYE_CAPTURE_BUFFER_SIZE);
 
-    if ((cmd_ptr->flags & EXP_FW_EXTENDED_DATA_BITMSK) == EXP_FW_EXTENDED_DATA)
+    if (cmd_parms_ptr->phy_init_mode == EXP_FW_PHY_INIT_RESET)
+    {
+        ddr_api_fw_phy_reset();
+
+        /* set the extended data response length */
+        rsp_ptr->ext_data_len = 0;
+
+        /* set the extended data flag */
+        rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
+
+    }
+    else if ((cmd_ptr->flags & EXP_FW_EXTENDED_DATA_BITMSK) == EXP_FW_EXTENDED_DATA)
     {
         if (cmd_ptr->ext_data_len != sizeof(user_input_msdg_t))
         {
@@ -136,6 +150,13 @@ PRIVATE VOID ddr_phy_init_command_handler(VOID)
             {
                 /* initialize the DDR interface */
                 ext_error_code = ddr_api_fw_train();
+
+                /*
+                ** After DDR has been trained and initialize, initialize the DDR
+                ** fatal and non-fatal reporting interface.
+                */
+                ddr_phy_fatal_init();
+                ddr_phy_non_fatal_init();
 
                 /* copy the training results into the extended data buffer */
                 memcpy(ext_data_ptr,
@@ -266,7 +287,7 @@ PRIVATE VOID ddr_phy_init_command_handler(VOID)
 
     if (ext_error_code != DDR_SUCCESS)
     {
-        error_status = TRUE;
+        error_status = PMCFW_ERR_FAIL;
 
         /* Set the summary error code for host */
         switch(ext_error_code)
@@ -389,8 +410,10 @@ PUBLIC void ddr_phy_plat_init(VOID)
     ech_api_func_register(EXP_FW_PHY_STEP_BY_STEP_INIT, ddr_phy_step_by_step_init_command_handler);
 
     /* Register crash dump */
-    crash_dump_register("DDRPHY_MSDG", &ddr_phy_plat_user_input_msdg_crash_dump, CRASH_DUMP_RAW, sizeof(user_input_msdg_t));
-    crash_dump_register("DDRPHY_REGS", &ddr_phy_dump_debug_info, CRASH_DUMP_ASCII, DDRPHY_REG_CRASH_DUMP_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_0, "DDRPHY_MSDG", &ddr_phy_plat_user_input_msdg_crash_dump, CRASH_DUMP_RAW, sizeof(user_input_msdg_t));
+    crash_dump_register(CRASH_DUMP_SET_0, "DDRPHY_REGS_SET1", &ddr_phy_dump_debug_info_set1, CRASH_DUMP_ASCII, DDRPHY_REG_SET1_CRASH_DUMP_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_1, "DDRPHY_REGS_SET2", &ddr_phy_dump_debug_info_set2, CRASH_DUMP_ASCII, DDRPHY_REG_SET2_CRASH_DUMP_SIZE);
+    crash_dump_register(CRASH_DUMP_SET_2, "DDRPHY_REGS_SET3", &ddr_phy_dump_debug_info_set3, CRASH_DUMP_ASCII, DDRPHY_REG_SET3_CRASH_DUMP_SIZE);
 }
 
 

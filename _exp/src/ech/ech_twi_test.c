@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -231,7 +231,7 @@ PUBLIC BOOL ech_twi_boot_config_test(VOID)
                         (EXP_TWI_BOOT_CFG_DL_BOOT_WAIT_FOR_HOST << EXP_TWI_BOOT_CFG_DL_MODE_BITOFF) |
                         (EXP_TWI_BOOT_CFG_HOST_BOOT_MODE << EXP_TWI_BOOT_CFG_BOOT_MODE_BITOFF)|
                         (EXP_TWI_BOOT_CFG_LANE_8 << EXP_TWI_BOOT_CFG_LANE_MODE_BITOFF) |
-                        (EXP_TWI_BOOT_CFG_SERDES_FREQ_2133_GBPS << EXP_TWI_BOOT_CFG_SERDES_FREQ_BITOFF);
+                        (EXP_SERDES_21_33_GBPS << EXP_TWI_BOOT_CFG_SERDES_FREQ_BITOFF);
 
 #if (ECH_TWI_TEST_MODE_UART_OUTPUT == 1)
     bc_printf("Performing Boot Config Test cfg_flags = 0x%04X\n", cfg_flags);
@@ -347,7 +347,7 @@ PUBLIC BOOL ech_twi_boot_config_test(VOID)
 #endif
     }
 
-    if (EXP_TWI_BOOT_CFG_SERDES_FREQ_2133_GBPS != ech_serdes_freq_get())
+    if (EXP_SERDES_21_33_GBPS != ech_serdes_freq_get())
     {
 #if (ECH_TWI_TEST_MODE_UART_OUTPUT == 1)
         bc_printf("Fail: unexpected SERDES frequency selection = 0x%02X\n", ech_serdes_freq_get());

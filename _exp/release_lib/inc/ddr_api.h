@@ -163,6 +163,13 @@ EXTERN uint32_t ddr_api_fw_read_eye_capture_train(uint8_t *eye_data_buffer_ptr);
 EXTERN uint32_t ddr_api_fw_write_eye_capture_train(uint8_t *eye_data_buffer_ptr);
 
 /*
+ * @brief Reset and power-on DDR PHY
+ *
+ * @return 0 = success, other = error code.
+ */
+EXTERN uint32_t ddr_api_fw_phy_reset(void);
+
+/*
  * @brief Override PHY delay line settings using TOF data
  * 
  * This function is targeted for initial bring-up without training

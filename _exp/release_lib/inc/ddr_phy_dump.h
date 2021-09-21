@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -28,7 +28,9 @@
 
 #include "pmcfw_types.h"
 
-EXTERN VOID ddr_phy_dump_debug_info(VOID);
+EXTERN VOID ddr_phy_dump_debug_info_set1(VOID);
+EXTERN VOID ddr_phy_dump_debug_info_set2(VOID);
+EXTERN VOID ddr_phy_dump_debug_info_set3(VOID);
 
 #endif /* _DDR_PHY_DUMP_H */
 

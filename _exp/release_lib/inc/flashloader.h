@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -79,7 +79,7 @@ typedef enum
 */
 typedef enum
 {
-    FLASHLOADER_ERR_READ_PARAM_ERROR =1,
+    FLASHLOADER_ERR_READ_PARAM_ERROR = 1,
     FLASHLOADER_ERR_INVALID_READ_LENGTH,
     FLASHLOADER_ERR_ADDRESS_OUT_OF_RANGE,
     FLASHLOADER_ERR_INVALID_PARTITION_ID, 
@@ -87,12 +87,13 @@ typedef enum
     FLASHLOADER_ERR_PARAMS_GET,
     FLASHLOADER_ERR_SUBSECTOR_ERASE,
     FLASHLOADER_ERR_SUBSECTOR_ERASE_TIMEOUT,
-    FLASHLOADER_ERR_PARTITION_VALUE_WRITE,
+    FLASHLOADER_ERR_PARTITION_VALUE_WRITE_DEPRECATED,           /**< Deprecated, but keep here to maintain numbering order. */
     FLASHLOADER_ERR_PARTITION_VALUE_WRITE_TIMEOUT,
     FLASHLOADER_ERR_FLASH_WRITE_TIMEOUT,
     FLASHLOADER_ERR_FLASH_WRITE_FAIL,
-    FLASHLOADER_ERR_FLASH_IMAGE_COMMIT_FW_LENGTH_OUT_OF_RANGE
-}flashloader_error_code_enum;
+    FLASHLOADER_ERR_FLASH_IMAGE_COMMIT_FW_LENGTH_OUT_OF_RANGE,
+    FLASHLOADER_ERR_AUTHENTICATION_ERROR,
+} flashloader_error_code_enum;
 
 
 /*

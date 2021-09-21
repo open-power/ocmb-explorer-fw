@@ -92,6 +92,10 @@ typedef BOOL (*spb_spi_ecc_err_check_fn_ptr_type)(const UINT8 port_id);
 EXTERN spb_spi_ecc_err_check_fn_ptr_type spb_spi_ecc_err_check_fn_ptr;
 #define spb_spi_ecc_err_check (*spb_spi_ecc_err_check_fn_ptr)
 
+typedef VOID (*spb_spi_uecc_int_en_fn_ptr_type)(const UINT8 port_id, const BOOL enable);
+EXTERN spb_spi_uecc_int_en_fn_ptr_type spb_spi_uecc_int_en_fn_ptr;
+#define spb_spi_uecc_int_en (*spb_spi_uecc_int_en_fn_ptr)
+
 typedef void (*spb_spi_2bit_ecc_err_inj_en_set_fn_ptr_type)(const UINT8 port_id, const BOOL enable);
 EXTERN spb_spi_2bit_ecc_err_inj_en_set_fn_ptr_type spb_spi_2bit_ecc_err_inj_en_set_fn_ptr;
 #define spb_spi_2bit_ecc_err_inj_en_set (*spb_spi_2bit_ecc_err_inj_en_set_fn_ptr)

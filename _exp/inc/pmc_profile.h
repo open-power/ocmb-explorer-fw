@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved.
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved.
 *
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not
 * use this file except in compliance with the License. You may obtain a copy of
@@ -174,11 +174,36 @@
 #define EXPLORER_SERDES_D_T_IQ_CALIBRATION_DEBUG    0
 
 /*
+** Use for Explorer debugging to disable watchdog timers and prevent interrupts 
+** from occuring and affecting the debug environment
+*/
+#define EXPLORER_WDT_DISABLE    0
+
+/*
+** Use for Explorer to disable or enable DDR training parameters being saved to SPI flash 
+*/
+#define EXPLORER_DDR_TRAIN_PARMS_SAVE_DISABLE   1
+
+/*
+** Use for Explorer FVB debugging to disable/enable on-chip temperature access over TWI 
+** To use the on-chip sensor set to 1, to use the external TWI sensor set to 0  
+*/
+#define EXPLORER_ON_CHIP_TEMP_TWI_ACCESS_DISABLE    1
+
+/*
 ** Compile assert if PE BUILD is enabled EXPLORER_BRINGUP flag must also be set.
 */
 #if (EXPLORER_PE_BUILD == 1 && EXPLORER_BRINGUP == 0)
 #error "EXPLORER_BRINGUP must be set to 1 if EXPLORER_PE_BUILD=1."
 #endif
+
+/*
+** Use for Explorer code and/or declarations that are only to be used for the PBOOT build. 
+**  
+** Set to 0 to exclude code and/or declarations. 
+** Set to 1 to include code and/or declarations.
+*/
+#define EXPLORER_PBOOT_BUILD     0
 
 #endif /* _PMC_PROFILE_H */
 

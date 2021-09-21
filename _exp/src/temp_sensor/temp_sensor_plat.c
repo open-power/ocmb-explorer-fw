@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -50,7 +50,10 @@
 #include "exp_gic.h"
 #include "cicint_api.h"
 #include <string.h>
-#include "opsw_api.h" 
+#include "opsw_timer.h" 
+#include "top_plat.h"
+#include "pvt.h"
+#include "pmc_profile.h"
 
 
 /*
@@ -85,12 +88,9 @@ typedef struct
 ** Local Constants
 */
 
-#define TEMP_SENSOR_CMD_ERR_CODE_BITMASK 0xFFFF  /* Pass through temperature commands are limited to 16-bit error codes */
+#define TEMP_SENSOR_CMD_ERR_CODE_BITMASK    0xFFFF  /* Pass through temperature commands are limited to 16-bit error codes */
 
 #define TEMP_SENSOR_UPDATE_TIMER_INT        TIMER_1_INT
-
-/* Initial configuration values for timer frequency. */
-#define EXP_CPU_INTVL_TIMER_1KHZ_TIMEBASE   0x04
 
 /* Flags for updating temperature sensors */
 #define TEMP_SENSOR_UPDATE_FLAG 0x1
@@ -149,18 +149,20 @@ PRIVATE VOID temp_sensor_plat_temp_update_int_handler(VOID *int_num)
 */
 PRIVATE VOID temp_sensor_plat_timer_int_init(VOID)
 {
-    /* Initialize and set timers to use a 1KHZ (1ms) base */
-    opsw_timer1_init(EXP_CPU_INTVL_TIMER_1KHZ_TIMEBASE);
+    /* Initialize interval timer1 */
+    opsw_timer1_temp_polling_init();
 
     /* Register and enable the timer interrupts */
-    cicint_int_register(TEMP_SENSOR_UPDATE_TIMER_INT, (cicint_cback_fcn_ptr)temp_sensor_plat_temp_update_int_handler, (VOID*)TEMP_SENSOR_UPDATE_TIMER_INT);
+    cicint_int_register(TEMP_SENSOR_UPDATE_TIMER_INT,
+                        (cicint_cback_fcn_ptr)temp_sensor_plat_temp_update_int_handler,
+                        (VOID*)TEMP_SENSOR_UPDATE_TIMER_INT);
 
     cicint_int_enable(TEMP_SENSOR_UPDATE_TIMER_INT);
 }
 
 /**
 * @brief
-*   Initializes the onchip temperature and onboard temperature timer interrupts
+*   Update interval timer used for periodic temperature updates
 *
 * @param[in] update_interval_ms - Update interval for the temperature sensors
 *
@@ -172,7 +174,6 @@ PRIVATE VOID temp_sensor_plat_timer_int_init(VOID)
 PRIVATE VOID temp_sensor_plat_timer_interval_update(UINT16 update_interval_ms)
 {
     opsw_timer1_interval_update(update_interval_ms);
-
 }
 
 /**
@@ -187,7 +188,7 @@ PRIVATE VOID temp_sensor_plat_timer_interval_update(UINT16 update_interval_ms)
 PRIVATE VOID temp_sensor_pass_through_read_command_handler(VOID)
 {
     UINT8 status = PMC_SUCCESS;
-    UINT32 error_code = 0;
+    UINT16 error_code = PMC_SUCCESS;
     BOOL stop_en;
     twi_slave_struct slave_temp_sensor;
     exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();
@@ -217,12 +218,12 @@ PRIVATE VOID temp_sensor_pass_through_read_command_handler(VOID)
 
     if (error_code != PMC_SUCCESS)
     {
+        bc_printf("EXP_FW_TEMP_SENSOR_PASS_THROUGH_READ error = 0x%08x\n", error_code);
         status = PMCFW_ERR_FAIL;
     }
 
     /* Fill response status and error code */
     rsp_parms_ptr->status = status;
-    rsp_parms_ptr->err_code = error_code & TEMP_SENSOR_CMD_ERR_CODE_BITMASK;
 
     /* set the no extended data flag */
     rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
@@ -281,12 +282,12 @@ PRIVATE VOID temp_sensor_pass_through_write_command_handler(VOID)
 
     if (error_code != PMC_SUCCESS)
     {
+        bc_printf("EXP_FW_TEMP_SENSOR_PASS_THROUGH_WRITE error = 0x%08x\n", error_code);
         status = PMCFW_ERR_FAIL;
     }
 
     /* Fill response status and error code */
     rsp_parms_ptr->status = status;
-    rsp_parms_ptr->err_code = error_code & TEMP_SENSOR_CMD_ERR_CODE_BITMASK;
 
     /* set the no extended data flag */
     rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
@@ -309,11 +310,11 @@ PRIVATE VOID temp_sensor_pass_through_write_command_handler(VOID)
 PRIVATE VOID temp_sensor_cfg_interval_read_command_handler(VOID)
 {
     UINT8 status = PMC_SUCCESS;
-    UINT32 error_code = PMC_SUCCESS;
+    UINT32 error_code = TEMP_SENSOR_INTERVAL_READ_SUCCESS;
     exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();
     exp_rsp_struct* rsp_ptr = ech_rsp_ptr_get();
     exp_fw_temp_interval_read_cmd_parms_struct* cmd_parms_ptr = (exp_fw_temp_interval_read_cmd_parms_struct*) &cmd_ptr->parms;
-    exp_fw_temp_write_rsp_parms_struct* rsp_parms_ptr = (exp_fw_temp_write_rsp_parms_struct*) &rsp_ptr->parms;
+    exp_fw_temp_interval_read_rsp_parms_struct* rsp_parms_ptr = (exp_fw_temp_interval_read_rsp_parms_struct*) &rsp_ptr->parms;
 
     temp_sensor_onboard_dimm0_config.present = (cmd_ptr->flags & EXP_FW_TEMP_DIMM0_PRESENT_BITMSK)? TRUE: FALSE;
     temp_sensor_onboard_dimm1_config.present = (cmd_ptr->flags & EXP_FW_TEMP_DIMM1_PRESENT_BITMSK)? TRUE: FALSE;
@@ -365,12 +366,15 @@ PRIVATE VOID temp_sensor_cfg_interval_read_command_handler(VOID)
     {
         if (cmd_parms_ptr->onchip_config_flags & EXP_TWI_TEMP_INTERVAL_READ_CMD_SENSOR_TYPE_BITMSK)
         {
-            status = PMCFW_ERR_FAIL;
-            error_code = TEMP_ERR_FW_MANAGED_UNSUPPORTED;
-            temp_sensor_onchip_config.present = FALSE;
+            /* 
+            ** firmware on-chip temp sensor will be used 
+            ** it is auto-configured by the application at start-up 
+            */
         }
         else
         {
+            /* on-chip temperature diode will be read via external TWI addressable temperature sensor */
+
             if (EXP_TWI_TEMP_INTERVAL_READ_CMD_SIZE_1_BYTE == ((cmd_parms_ptr->onchip_config_flags & EXP_TWI_TEMP_INTERVAL_READ_CMD_SIZE_BITMSK) >>
                                                                                                      EXP_TWI_TEMP_INTERVAL_READ_CMD_SIZE_BITOFF))
             {
@@ -400,7 +404,7 @@ PRIVATE VOID temp_sensor_cfg_interval_read_command_handler(VOID)
                     else
                     {
                         status = PMCFW_ERR_FAIL;
-                        error_code = TEMP_ERR_ONCHIP_NUM_REG_READ_OP_UNSUPPORTED;
+                        error_code = TEMP_ERR_ONCHIP_REG_READ_LEN_UNSUPPORTED;
                         temp_sensor_onchip_config.present = FALSE;
                     }
                 }
@@ -440,7 +444,6 @@ PRIVATE VOID temp_sensor_cfg_interval_read_command_handler(VOID)
     /* send the response */
     ech_oc_rsp_proc();
 
-
 } /* ech_fw_temp_sensor_cfg_interval_read */
 
 
@@ -457,21 +460,58 @@ PRIVATE VOID temp_sensor_cfg_interval_read_command_handler(VOID)
 * @param
 *   None
 * @return
-*   None.
+*   PMC_SUCCESS or error specific code
 *
 */
-PUBLIC VOID temp_sensor_plat_init(VOID)
+PUBLIC PMCFW_ERROR temp_sensor_plat_init(VOID)
 {
     /* Register the temperature sensor command handler with ECH module*/
-     ech_api_func_register(EXP_FW_TEMP_SENSOR_PASS_THROUGH_READ, temp_sensor_pass_through_read_command_handler);
-     ech_api_func_register(EXP_FW_TEMP_SENSOR_PASS_THROUGH_WRITE, temp_sensor_pass_through_write_command_handler);
-     ech_api_func_register(EXP_FW_TEMP_SENSOR_CONFIG_INTERVAL_READ, temp_sensor_cfg_interval_read_command_handler);
+    ech_api_func_register(EXP_FW_TEMP_SENSOR_PASS_THROUGH_READ, temp_sensor_pass_through_read_command_handler);
+    ech_api_func_register(EXP_FW_TEMP_SENSOR_PASS_THROUGH_WRITE, temp_sensor_pass_through_write_command_handler);
+    ech_api_func_register(EXP_FW_TEMP_SENSOR_CONFIG_INTERVAL_READ, temp_sensor_cfg_interval_read_command_handler);
 
-     /* Initialize the timer interrupts */
-     temp_sensor_plat_timer_int_init();
+    /* Initialize the timer interrupt */
+    temp_sensor_plat_timer_int_init();
 
-     /* Initialize the temperature sensor driver */
-     temp_sensor_driver_plat_init();
+    /* 
+    ** if operating on FVB, temp sensors are behind TWI expander
+    ** if present, enable the expander channels to access the temp sensors 
+    ** NOTE: the FVB temp sensors are on different expander channels but since both 
+    ** channels will be enabled the temp sensors must be at different addresses
+    */
+
+    /* 
+    ** ensure the master port recovery sequence is disabled so recovery is not 
+    ** attempted if there is no response from the expander 
+    */ 
+    BOOL mst_init_recovery_en = twi_mst_init_recovery_en_get(EXP_TWI_MASTER_PORT);
+    twi_mst_init_recovery_en_set(EXP_TWI_MASTER_PORT, FALSE);
+
+    /* 
+    ** enable DIMM0 channel on TWI expander
+    ** only required for Explorer FVB, has no impact if expander is not present
+    ** expander address is reserved and no other device should be at the address
+    */
+    PMCFW_ERROR rc = temp_sensor_driver_twi_expander_enable(TWI_SWITCH_CHANNEL_ID_2);
+    if (PMC_SUCCESS == rc)
+    {
+        /* 
+        ** expander responded successfully so it is present 
+        ** enable DIMM1 channel on TWI expander
+        */ 
+        temp_sensor_driver_twi_expander_enable(TWI_SWITCH_CHANNEL_ID_3);
+
+#if (EXPLORER_ON_CHIP_TEMP_TWI_ACCESS_DISABLE == 0)
+        /* enable on-chip channel on TWI expander */
+        temp_sensor_driver_twi_expander_disable(TWI_SWITCH_CHANNEL_ID_4);
+#endif
+    }
+
+    /* restore the original setting for master port recovery */
+    twi_mst_init_recovery_en_set(EXP_TWI_MASTER_PORT, mst_init_recovery_en);
+
+    /* initialize the on-chip temp sensor for continuous measurement */
+    return (pvt_ts_init(PVT_TS_CLK_FREQ_5M, PVT_TS_MEASURE_TYPE_CONTINUOUS));
 }
 
 /**
@@ -486,9 +526,9 @@ PUBLIC VOID temp_sensor_plat_update(VOID)
 {
     UINT16 dimm0_temp;
     UINT16 dimm1_temp;
-    UINT16 chip_temp;
     UINT8 twi_data_buffer[2];
     PMCFW_ERROR rc;
+    top_plat_lock_struct lock_struct;
 
     /* Update if the flag is set */
     if (temperature_update_flags & TEMP_SENSOR_UPDATE_FLAG)
@@ -497,76 +537,149 @@ PUBLIC VOID temp_sensor_plat_update(VOID)
         {
             memset(&twi_data_buffer, 0, sizeof(twi_data_buffer));
 
-            rc = temp_sensor_driver_plat_jedec_read(temp_sensor_onboard_dimm0_config.twi_addr, temp_sensor_onboard_dimm0_config.twi_reg_offset, temp_sensor_onboard_dimm0_config.twi_read_size, twi_data_buffer);
+            rc = temp_sensor_driver_plat_jedec_read(temp_sensor_onboard_dimm0_config.twi_addr, 
+                                                    temp_sensor_onboard_dimm0_config.twi_reg_offset, 
+                                                    temp_sensor_onboard_dimm0_config.twi_read_size, 
+                                                    twi_data_buffer);
 
             if (rc == PMC_SUCCESS)
             {
                 dimm0_temp = twi_data_buffer[0] | (twi_data_buffer[1] << UINT8_BITS);
 
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register */
                 ocmb_api_temp_dimm0_update(dimm0_temp, TRUE, TRUE, FALSE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
             else
             {
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register with error bit */
                 ocmb_api_temp_dimm0_update(0, FALSE, TRUE, TRUE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
         }
         else
         {
+            /* DIMM0 is not present */
+
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_critical_region_enter(&lock_struct);
+
             /* Update the OCMB thermal data register with present bit unset */
             ocmb_api_temp_dimm0_update(0, FALSE, FALSE, FALSE);
+
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct);
         }
 
         if (temp_sensor_onboard_dimm1_config.present)
         {
+
             memset(&twi_data_buffer, 0, sizeof(twi_data_buffer));
 
-            rc = temp_sensor_driver_plat_jedec_read(temp_sensor_onboard_dimm1_config.twi_addr, temp_sensor_onboard_dimm1_config.twi_reg_offset, temp_sensor_onboard_dimm1_config.twi_read_size, twi_data_buffer);
+            rc = temp_sensor_driver_plat_jedec_read(temp_sensor_onboard_dimm1_config.twi_addr, 
+                                                    temp_sensor_onboard_dimm1_config.twi_reg_offset, 
+                                                    temp_sensor_onboard_dimm1_config.twi_read_size, 
+                                                    twi_data_buffer);
 
             if (rc == PMC_SUCCESS)
             {
                 dimm1_temp = twi_data_buffer[0] | (twi_data_buffer[1] << UINT8_BITS);
 
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register */
                 ocmb_api_temp_dimm1_update(dimm1_temp, TRUE, TRUE, FALSE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
             else
             {
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register with error bit */
                 ocmb_api_temp_dimm1_update(0, FALSE, TRUE, TRUE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
         }
         else
         {
+            /* DIMM1 is not present */
+
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_critical_region_enter(&lock_struct);
+
             /* Update the OCMB thermal data register with present bit unset */
             ocmb_api_temp_dimm1_update(0, FALSE, FALSE, FALSE);
+
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct);
         }
 
         if (temp_sensor_onchip_config.present)
         {
+#if (EXPLORER_ON_CHIP_TEMP_TWI_ACCESS_DISABLE == 0)
+            UINT16 chip_temp;
             rc = temp_sensor_driver_plat_onchip_read(temp_sensor_onchip_config.twi_addr,
                                                      temp_sensor_onchip_config.reg_offset_mode,
                                                      temp_sensor_onchip_config.twi_reg_offset,
                                                      temp_sensor_onchip_config.num_twi_reads,
                                                      temp_sensor_onchip_config.twi_read_size,
                                                      &chip_temp);
+#else
+            /* get the on-chip temperature */
+            INT16 chip_temp;
+            rc = pvt_ts_centigrade_degree_get(&chip_temp);
+#endif
+
             if (rc == PMC_SUCCESS)
             {
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register */
                 ocmb_api_temp_onchip_update(chip_temp, TRUE, TRUE, FALSE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
             else
             {
+                /* disable interrupts and disable multi-VPE operation */
+                top_plat_critical_region_enter(&lock_struct);
+
                 /* Update the OCMB thermal data register with error bit */
                 ocmb_api_temp_onchip_update(0, FALSE, TRUE, TRUE);
+
+                /* restore interrupts and enable multi-VPE operation */
+                top_plat_critical_region_exit(lock_struct);
             }
         }
         else
         {
+            /* disable interrupts and disable multi-VPE operation */
+            top_plat_critical_region_enter(&lock_struct);
+
             /* Update the OCMB thermal data register with present bit unset */
             ocmb_api_temp_onchip_update(0, FALSE, FALSE, FALSE);
-        }
+
+            /* restore interrupts and enable multi-VPE operation */
+            top_plat_critical_region_exit(lock_struct);
+       }
 
         /* Clear temperature sensor update flag */
         temperature_update_flags &= ~TEMP_SENSOR_UPDATE_FLAG;

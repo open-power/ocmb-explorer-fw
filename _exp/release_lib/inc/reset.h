@@ -108,7 +108,7 @@ typedef enum
 
 typedef void (*reset_nmi_cback_fcn_ptr)(void);
 
-typedef void (*reset_assertion_cback_fcn_ptr)(void);
+typedef void (*reset_assertion_cback_fcn_ptr)(void *cback_arg);
 
 typedef void (*reset_cback_fcn_ptr)(UINT32 error_code,
                                     UINT32 num_reg,

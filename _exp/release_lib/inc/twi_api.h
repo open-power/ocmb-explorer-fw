@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -327,6 +327,9 @@ EXTERN PMCFW_ERROR twi_slv_data_get(const UINT  port_id,
 EXTERN PMCFW_ERROR twi_slv_data_put(const UINT port_id,
                                     const UINT8 * const data_ptr,
                                     const UINT32 len);
+
+EXTERN BOOL twi_mst_init_recovery_en_get(const UINT port_id);
+EXTERN VOID twi_mst_init_recovery_en_set(const UINT port_id, BOOL mst_line_reset_en);
 
 #endif
 

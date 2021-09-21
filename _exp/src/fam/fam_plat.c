@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -32,6 +32,7 @@
 #include "app_fw.h"
 #include "top.h"
 #include "opsw_api.h"
+#include "top_plat.h"
 
 
 /*
@@ -88,6 +89,8 @@ PRIVATE UINT32 current_gp=0;
 ** PRIVATE Functions
 */
 
+PRIVATE top_plat_lock_struct fam_plat_lock_struct;
+
 /**
 * @brief
 *   Patch gp register with reserved memory location for
@@ -102,9 +105,9 @@ PRIVATE UINT32 current_gp=0;
 */
 PRIVATE inline VOID fam_plat_gp_reg_patch(void)
 {
-    /* Disable Interrupt as context switch is not allowed */
-    asm("di");
-    asm("ehb");
+    /* Enter FAM critical region. */
+    top_plat_critical_region_enter(&fam_plat_lock_struct);
+
     /* Save the current GP*/
     current_gp = hal_gp_register_get();
     hal_gp_register_set(((UINT32)__ghsbegin_pboot_sda_patch + FAM_BOOTROM_GP_OFFSET));
@@ -124,9 +127,9 @@ PRIVATE inline VOID fam_plat_gp_reg_patch(void)
 PRIVATE inline VOID fam_plat_gp_reg_restore(void)
 {
     hal_gp_register_set(current_gp);    
-    /*Enable Interrupt*/
-    asm("ei");
-    asm("ehb");
+
+    /* Exit FAM critical region. */
+    top_plat_critical_region_exit(fam_plat_lock_struct);
 }
 
 /*

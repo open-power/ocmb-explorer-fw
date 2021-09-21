@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -19,14 +19,14 @@
 *     Generated register header file to be used by serdes_config_guide.c.
 *     
 *     This file is generated from:
-*     Foxhound_RevA_Config_Guide_pdox_r0_53.xlsx (0.53)
+*     Foxhound_RevB_Config_Guide_v015.xlsx (0.15)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_53.xlsx
-*     -r0.53 -pFoxhound_RevA_Config_Guide_pdox_r0_53.parsed
+*     python ConfigGuideConv.py -gFoxhound_RevB_Config_Guide_v015.xlsx -r0.15
+*     -pFoxhound_RevB_Config_Guide_v015.parsed
 *     -nnamespace_exp_p_a_release_047.tcl -cserdes_config_guide.c
 *     -hserdes_config_guide.h
-*     -xFHCG_init,FHCG_LBinit,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,FH_IQ_Offset_Calibration
+*     -xFHCG_LBinit,FHCG_init,FHCG_orig_init,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_IQ_Offset_Calibration,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,PJ_INJ_Config,FH_CDR_Offset_Calibration,FH_Meas_BER_Linking
 *     -fSERDES -a
 * 
 * 
@@ -88,16 +88,17 @@ EXTERN BOOL SERDES_FH_CSU_init_1_21g328(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_read_adapt(UINT32 adsp_pcbi_base_addr,
                                  UINT32 mtsb_ctrl_pcbi_base_addr,
                                  exp_pqm_rx_adapt_obj_struct* rx_adapt_data_ptr);
-EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_normal(UINT32 adsp_pcbi_base_addr,
-                                                 UINT32 mtsb_ctrl_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_dfe_disable(UINT32 adsp_pcbi_base_addr,
-                                                      UINT32 mtsb_ctrl_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_adaptation_disable(UINT32 adsp_pcbi_base_addr,
-                                                             UINT32 mtsb_ctrl_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_CSU_init_2_generic(UINT32 csu_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_CSU_init_2_25g6(UINT32 csu_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_CSU_init_2_23g46(UINT32 csu_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_CSU_init_2_21g328(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_start_normal(UINT32 adsp_pcbi_base_addr,
+                                                       UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_start_dfe_disable(UINT32 adsp_pcbi_base_addr,
+                                                            UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_FW_start_adaptation_disable(UINT32 adsp_pcbi_base_addr,
+                                                                   UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_ForceCDRadaptDFE(UINT32 adsp_pcbi_base_addr,
+                                       UINT32 mtsb_ctrl_pcbi_base_addr,
+                                       UINT32 force_adapt_value_en,
+                                       UINT32 adapt_loops_pass11,
+                                       UINT32 objects_en_pass11);
 EXTERN BOOL SERDES_FH_TX_alignment(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_pattmon_dis(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_pattmon_en(UINT32 channel_pcbi_base_addr,
@@ -107,6 +108,8 @@ EXTERN BOOL SERDES_FH_TXRX_datapath(UINT32 adsp_pcbi_base_addr,
                                     UINT32 mdsp_pcbi_base_addr,
                                     UINT32 channel_pcbi_base_addr,
                                     UINT32 mtsb_ctrl_pcbi_base_addr,
+                                    UINT8  prop_gain,
+                                    UINT8  integ_gain,
                                     UINT32 tap_sel,
                                     UINT32 udfe_mode,
                                     UINT32 ph_ofs_t_pre);
@@ -119,6 +122,10 @@ EXTERN BOOL SERDES_FH_poll_rx_alignment(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_poll_tx_alignment(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_TXRX_ReAdaptation(UINT32 adsp_pcbi_base_addr,
                                         UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_CSU_init_2_generic(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_CSU_init_2_25g6(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_CSU_init_2_23g46(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_CSU_init_2_21g328(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_Channel_PowerDwn(UINT32 csu_pcbi_base_addr,
                                        UINT32 mtsb_ctrl_pcbi_base_addr,
                                        UINT32 channel_pcbi_base_addr);
@@ -128,10 +135,15 @@ EXTERN BOOL SERDES_FH_alignment_init_1(UINT32 mtsb_ctrl_pcbi_base_addr,
 EXTERN BOOL SERDES_FH_TX_Calibration(UINT32 csu_pcbi_base_addr,
                                      UINT32 mtsb_ctrl_pcbi_base_addr,
                                      UINT32 channel_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_fw_init(UINT32 channel_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_ClearCSU_ppm(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_TXRX_PowerUp(UINT32 csu_pcbi_base_addr,
                                    UINT32 mtsb_ctrl_pcbi_base_addr,
                                    UINT32 channel_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_fw_init(UINT32 channel_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_SetCSU_ppm_generic(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_SetCSU_ppm_25g6(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_SetCSU_ppm_23g46(UINT32 csu_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_SetCSU_ppm_21g328(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_TXRX_PowerDwn(UINT32 csu_pcbi_base_addr,
                                     UINT32 mtsb_ctrl_pcbi_base_addr,
                                     UINT32 channel_pcbi_base_addr);
@@ -154,6 +166,8 @@ EXTERN BOOL SERDES_FH_read_calib(UINT32 mtsb_ctrl_pcbi_base_addr,
 EXTERN BOOL SERDES_FH_pattgen_chkrd(UINT32 channel_pcbi_base_addr,
                                     UINT32* err_cnt_ptr);
 
+EXTERN BOOL SERDES_FH_check_CDR_lock_1(UINT32 mdsp_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_check_CDR_lock_2(UINT32 mdsp_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_csu_bist1(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_Diag_VBT(UINT32 mtsb_ctrl_pcbi_base_addr,
                                UINT32 diag_pcbi_base_addr,
@@ -194,6 +208,7 @@ EXTERN BOOL SERDES_FH_read_rtrim(UINT32 channel_pcbi_base_addr,
                                  UINT32 *rtrim_14_0_ptr,
                                  UINT32 *rtrim_34_15_ptr);
 EXTERN BOOL SERDES_FH_IQ_Offset_Calibration_1(UINT32 mtsb_ctrl_pcbi_base_addr,
+                                              UINT32 iq_accum_cycles,
                                               UINT32 iqcor_sel);
 EXTERN BOOL SERDES_FH_alignment(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_IQ_Offset_Calibration_3(UINT32 mdsp_pcbi_base_addr,
@@ -217,11 +232,14 @@ EXTERN BOOL SERDES_FH_CSU_read_ppm(UINT32 csu_pcbi_base_addr,
 EXTERN BOOL SERDES_FH_csu_bist2(UINT32 csu_pcbi_base_addr,
                                 UINT32 vcap_addr_min,
                                 UINT32 vcap_addr_max);
-EXTERN BOOL SERDES_FH_TXRX_Adaptation1_PE(UINT32 adsp_pcbi_base_addr,
-                                          UINT32 mdsp_pcbi_base_addr,
-                                          UINT32 mtsb_ctrl_pcbi_base_addr,
-                                          UINT32 obj_en_pass3);
-EXTERN BOOL SERDES_FH_PGA_init(UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_Force_start_normal(UINT32 adsp_pcbi_base_addr,
+                                                          UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_Force_start_dfe_disable(UINT32 adsp_pcbi_base_addr,
+                                                               UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TXRX_Adaptation1_Force_start_adaptation_disable(UINT32 adsp_pcbi_base_addr,
+                                                                      UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_PGA_init(UINT32 mtsb_ctrl_pcbi_base_addr,
+                               UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_csu_bist5(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_TXRX_AdaptObj_Force(UINT32 adsp_pcbi_base_addr,
                                           UINT32 mtsb_ctrl_pcbi_base_addr,

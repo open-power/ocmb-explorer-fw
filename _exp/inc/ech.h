@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -36,6 +36,7 @@
 #include "pmcfw_types.h"
 #include "pmcfw_err.h"
 #include "exp_api.h"
+#include "tmr_sys_plat.h"
 
 
 /*
@@ -114,35 +115,32 @@ EXTERN VOID ech_dfe_state_set(UINT32 dfe_state_val);
 EXTERN BOOL ech_dfe_state_get(VOID);
 EXTERN VOID ech_adaptation_state_set(UINT32 adaptation_state_val);
 EXTERN BOOL ech_adaptation_state_get(VOID);
-EXTERN VOID ech_twi_init(UINT32 mst_port, UINT32 slv_port, UINT32 slv_addr);
-EXTERN VOID ech_twi_status_byte_set(UINT8 status_byte);
-EXTERN UINT8* ech_twi_tx_buf_get(VOID);
-EXTERN VOID ech_twi_rx_index_inc(UINT32 bytes_processed);
-EXTERN VOID ech_twi_slave_proc(UINT32 port_id);
-EXTERN VOID ech_twi_fw_mode_set(UINT8 fw_mode_byte);
-EXTERN UINT8 ech_twi_fw_mode_get(void);
-
+EXTERN VOID ech_serdes_prbs_cal_state_set(BOOL serdes_prbs_cal_state_val);
+EXTERN BOOL ech_serdes_prbs_cal_state_get(VOID);
+EXTERN VOID ech_serdes_prbs_cal_data_set(UINT8 pattmon_detected_bitmask, UINT8 cal_converged_bitmask);
+EXTERN VOID ech_serdes_prbs_cal_data_get(UINT8 * pattmon_detected_bitmask, UINT8 * cal_converged_bitmask);
+EXTERN VOID ech_serdes_loopback_set(BOOL serdes_loopback_state);
+EXTERN BOOL ech_serdes_loopback_get(VOID);
+EXTERN VOID ech_serdes_loopback_csu_offset_mask_set(BOOL serdes_csu_offset_mask);
+EXTERN BOOL ech_serdes_loopback_csu_offset_mask_get(VOID);
 EXTERN BOOL ech_oc_cmd_proc(VOID);
 EXTERN VOID ech_oc_rsp_proc(VOID);
-
-EXTERN VOID ech_pqm_cmd_proc(UINT8* rx_buf_ptr, UINT32 rx_index);
-EXTERN VOID ech_pqm_cmd_rx_index_increment(UINT8* rx_buf_ptr, UINT32 rx_index);
-EXTERN UINT32 ech_pqm_force_delay_line_update (UINT8* rx_buf_ptr, UINT32 rx_index);
-
 EXTERN UINT8 ech_extended_error_code_get(VOID);
 EXTERN VOID ech_extended_error_code_set(UINT32 error_code);
-
 EXTERN UINT8 ech_ph_ofs_t_preload_use_host_get(VOID);
 EXTERN VOID ech_ph_ofs_t_preload_use_host_set(UINT8 use_host_flag);
-EXTERN VOID ech_ph_ofs_t_preload_set(UINT32 lane,
-                                     UINT8 reg_val);
+EXTERN VOID ech_ph_ofs_t_preload_set(UINT32 lane, UINT8 reg_val);
 EXTERN UINT8 ech_ph_ofs_t_preload_get(UINT32 lane);
 EXTERN UINT8 ech_d_iq_offset_use_host_get(VOID);
 EXTERN VOID ech_d_iq_offset_use_host_set(UINT8 use_host_flag);
 EXTERN UINT8 ech_d_iq_offset_get(UINT32 lane);
 EXTERN VOID ech_d_iq_offset_set(UINT32 lane, UINT8 reg_val);
-
-
+EXTERN BOOL ech_serdes_cdr_prop_gain_set(UINT8 prop_gain);
+EXTERN BOOL ech_serdes_cdr_integ_gain_set(UINT8 integ_gain);
+EXTERN UINT8 ech_serdes_cdr_prop_gain_get(VOID);
+EXTERN UINT8 ech_serdes_cdr_integ_gain_get(VOID);
+PUBLIC UINT8 ech_lane_active_pattern_bitmask_get(VOID);
+PUBLIC VOID ech_lane_active_pattern_bitmask_set(UINT8 lane_bitmask);
 
 
 #endif /* _ECH_H */

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -87,6 +87,7 @@
 #define EXPLORER_WDT_OFFSET                  0x00015000
 #define EXPLORER_SPI_0_OFFSET                0x00016000
 #define EXPLORER_DCSU_16N_OFFSET             0x00208000
+#define EXPLORER_PVT_CTRL_OFFSET             0x00209000
 #define EXPLORER_EFUSE_OFFSET                0x0020b000
 #define EXP_OCMB_OFFSET                      0x08000000
 #define EXPLORER_SPI_CNTL_0_OFFSET           0x10000000
@@ -175,6 +176,12 @@
 
 /* GPBCE PERI*/
 #define GPBCE_PERI_REGS_BASE_ADDR           (MIPS_KSEG1_BASE_ADDRESS | EXPLORER_GPBC_PERI_XCBI_OFFSET)
+
+/* WDT */
+#define WDT_REGS_BASE_ADDR                  (MIPS_KSEG1_BASE_ADDRESS | EXPLORER_WDT_OFFSET)
+
+/* PVT */
+#define PVT_REGS_BASE_ADDR                  (MIPS_KSEG1_BASE_ADDRESS | EXPLORER_PVT_CTRL_OFFSET)
 
 #endif /* define _PMC_BASE__ADDRESS_H */
 

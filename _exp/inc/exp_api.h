@@ -1,16 +1,16 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
-*                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
-*                                                                               
-* Licensed under the Apache License, Version 2.0 (the "License"); you may not 
-* use this file except in compliance with the License. You may obtain a copy of 
+*
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License"); you may not
+* use this file except in compliance with the License. You may obtain a copy of
 * the License at http://www.apache.org/licenses/LICENSE-2.0
-*                                                                               
-* Unless required by applicable law or agreed to in writing, software 
-* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT 
-* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the 
-* License for the specific language governing permissions and limitations under 
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+* License for the specific language governing permissions and limitations under
 * the License.
 ********************************************************************************/
 
@@ -61,66 +61,9 @@
 #define EXP_TWI_EXT_RSP_LEN_LOW_OFFSET          1
 #define EXP_TWI_EXT_RSP_DATA_OFFSET             2
 
-/* TWI command success value */
-#define EXP_TWI_SUCCESS                         0x00
-
-/* TWI error values */
-#define EXP_TWI_ERROR                           0xC0
-#define EXP_TWI_UNSUPPORTED                     0xD0
-
-/* TWI Busy Status*/
-#define EXP_TWI_BUSY                            0xFE
-
 /* TWI boot config command length */
 #define EXP_TWI_BOOT_CFG_CMD_DATA_LEN           4
 #define EXP_TWI_BOOT_CFG_CMD_LEN                (EXP_TWI_BOOT_CFG_CMD_DATA_LEN + 2)
-
-/* Top level TWI boot config error bit masks */
-#define EXP_TWI_BOOT_CFG_FAILED_BITMSK                             0x01
-#define EXP_TWI_BOOT_CFG_SERDES_LOOPBACK_FAIL_BITMASK              0x02
-#define EXP_TWI_BOOT_CFG_SERDES_INIT_FAIL_BITMASK                  0x04
-#define EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK                    0x08
-#define EXP_TWI_BOOT_CFG_SERDES_LANE_INVERSION_CONFIG_FAIL_BITMSK  0x10
-
-/* Extended Error code for EXP_TWI_BOOT_CFG_FAILED_BITMSK */
-#define EXP_TWI_BOOT_CFG_UNSUPPORTED_SERDES_FREQ_BITMSK    0x01
-#define EXP_TWI_BOOT_CFG_UNSUPPORTED_TL_BITMSK             0x02
-#define EXP_TWI_BOOT_CFG_UNSUPPORT_LANE_CONFIG_BITMSK      0x04
-
-
-/* Extended Error code for EXP_TWI_BOOT_CFG_SERDES_INIT_FAIL_BITMASK */
-#define EXP_SERDES_TRAINING_FREQ_UNSUPPORTED               0x01
-#define EXP_SERDES_TRAINING_CSU_FAILED                     0x02
-#define EXP_SERDES_TRAINING_CALIB_FAILED                   0x03
-#define EXP_SERDES_TRAINING_ADAPT1_FAILED                  0x04
-#define EXP_SERDES_FH_ALIGNMENT1_FAILED                    0x05
-#define EXP_SERDES_FH_ALIGNMENT2_FAILED                    0x06
-#define EXP_SERDES_DDLL_LOCK_FAIL                          0x07
-#define EXP_SERDES_DEASSERT_PHY_OCMB_RESET_FAIL            0x08
-#define EXP_SERDES_FH_ALIGNMENT_INIT_1_FAIL                0x09
-#define EXP_SERDES_FH_TX_ALIGNMENT_FAIL                    0x0a
-#define EXP_SERDES_FH_PATTERNGEN_ENABLE_FAIL               0x0b
-#define SERDES_FH_TXRX_ADAPTATION_1_PE_FAIL                0x0c
-#define EXP_SERDES_FH_PATTERNMON_ENABLE_FAIL               0x0d
-#define EXP_TWI_BOOT_CFG_SERDES_LOOPBACK_LANE_ID_FAIL      0x0e
-#define EXP_SERDES_TRAINING_ADAPT2_FAILED                  0x0f   
-#define EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_1_FAILED     0x10   
-#define EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_2_FAILED     0x11   
-#define EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_3_FAILED     0x12   
-#define EXP_SERDES_DATA_IQ_OFFSET_OUT_OF_RANGE             0x13
-#define EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_1_FAILED   0x14   
-#define EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_2_FAILED   0x15   
-#define EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_3_FAILED   0x16   
-#define EXP_SERDES_TIMING_IQ_OFFSET_OUT_OF_RANGE           0x17
-#define EXP_SERDES_IQ_OFFSET_CALIBRATION_4_FAILED          0x18   
-
-/* Extended Error code for EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK */
-#define EXP_TWI_BOOT_CFG_DLX_CONFIG_PATTERN_A_B_FAILED     0x01
-#define EXP_TWI_BOOT_CFG_DLX_CONFIG_FW_FAILED              0x02
-
-/* Extended Error code for EXP_TWI_BOOT_CFG_SERDES_LANE_INVERSION_CONFIG_FAIL_BITMSK */
-#define EXP_TWI_BOOT_CFG_SERDES_FH_RX_ALIGNMENT_FAIL       0x01
-#define EXP_TWI_BOOT_CFG_SERDES_RX_PATB_TIMEOUT_FAIL       0x02       
 
 /* TWI boot config Adaptation Enable */
 #define EXP_TWI_BOOT_CFG_SERDES_ADAPTATION_ENABLE_BITMSK                 0x8000
@@ -149,11 +92,16 @@
 #define EXP_TWI_BOOT_CFG_TL_TWI_MODE            1
 #define EXP_TWI_BOOT_CFG_TL_JTAG_MODE           2
 
-/* TWI boot config datalink layer mode */
-#define EXP_TWI_BOOT_CFG_BOOT_STEP_BITMSK       0x0300
-#define EXP_TWI_BOOT_CFG_BOOT_STEP_BITOFF       8
-#define EXP_TWI_BOOT_CFG_BOOT_STEP_0            0
-#define EXP_TWI_BOOT_CFG_BOOT_STEP_1            1
+/* 
+** TWI boot config datalink layer mode 
+** Boot step 1 also implements improved serdes prbs calibration. For 
+** configuration, rely on the value passed in during boot step 0 
+*/
+#define EXP_TWI_BOOT_CFG_BOOT_STEP_BITMSK           0x0300
+#define EXP_TWI_BOOT_CFG_BOOT_STEP_BITOFF           8
+#define EXP_TWI_BOOT_CFG_BOOT_STEP_0                0
+#define EXP_TWI_BOOT_CFG_BOOT_STEP_1                1
+#define EXP_TWI_BOOT_CFG_SERDES_PRBS_CAL_STEP_0     2
 
 /* TWI boot config bootmode */
 #define EXP_TWI_BOOT_CFG_DFE_BITMSK             0x0080
@@ -163,30 +111,28 @@
 /* TWI boot config lanemode */
 #define EXP_TWI_BOOT_CFG_LANE_MODE_BITMSK       0x0070
 #define EXP_TWI_BOOT_CFG_LANE_MODE_BITOFF       4
-#define EXP_TWI_BOOT_CFG_LANE_ERROR             0
 #define EXP_TWI_BOOT_CFG_LANE_8                 1
 #define EXP_TWI_BOOT_CFG_LANE_4                 2
 
 /* TWI boot config SerDes frequency */
 #define EXP_TWI_BOOT_CFG_SERDES_FREQ_BITMSK     0x000F
 #define EXP_TWI_BOOT_CFG_SERDES_FREQ_BITOFF     0
-#define EXP_TWI_BOOT_CFG_SERDES_FREQ_ERROR      0
-#define EXP_TWI_BOOT_CFG_SERDES_FREQ_2133_GBPS  1
-#define EXP_TWI_BOOT_CFG_SERDES_FREQ_2346_GBPS  2
-#define EXP_TWI_BOOT_CFG_SERDES_FREQ_2560_GBPS  3
+
+/* TWI boot config OMI loopback */
+#define EXP_TWI_BOOT_CFG_OMI_LOOPBACK_BITMSK     0xFF0000
+#define EXP_TWI_BOOT_CFG_OMI_LOOPBACK_BITOFF     16
+#define EXP_TWI_BOOT_CFG_OMI_NO_LOOPBACK_MODE    0
 
 /* TWI boot stage */
+#define EXP_TWI_STATUS_BITMSK                   0x03
+#define EXP_TWI_STATUS_BITOFF                   0
 #define EXP_TWI_STATUS_BOOT_ROM                 0x01
 #define EXP_TWI_STATUS_FW_UPGRADE               0x02
 #define EXP_TWI_STATUS_RUN_TIME                 0x03
 
-/* TWI register read/write errors */
-#define EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE        0x01
-#define EXP_TWI_REG_RW_ADDR_PROHIBITED          0x02
-#define EXP_TWI_REG_RW_ADDR_INVALID             0x03
-#define EXP_TWI_REG_RW_WRITE_ONLY               0x04
-#define EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID   0x05
-#define EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID  0x06
+/* FW API Version Number */
+#define EXP_TWI_STATUS_FW_API_VERSION_BITMSK    0x7C
+#define EXP_TWI_STATUS_FW_API_VERSION_BITOFF    2
 
 /* TWI Status command/response lengths */
 #define EXP_TWI_STATUS_CMD_LEN                  1
@@ -213,15 +159,6 @@
 /* TWI PHY INIT command parms length */
 #define EXP_TWI_PHY_INIT_PARMS_INIT_MODE_LEN    1
 #define EXP_TWI_PHY_INIT_PARMS_RESERVED_LEN     EXP_OC_RESP_PARMS_LEN - EXP_TWI_PHY_INIT_PARMS_INIT_MODE_LEN
-
-/* Error codes for EXP_FW_DDR_PHY_INIT_RESP */
-#define DDR_PHY_INIT_RESP_SUCCESS           0x00
-#define DDR_PHY_INIT_UNSUPPORTED_INIT_MODE  0x01
-#define DDR_PHY_INIT_INPUT_MSDG_SIZE_ERROR  0x02
-#define DDR_PHY_INIT_INPUT_MSDG_NO_EXT_DATA 0x03
-#define DDR_PHY_INIT_INPUT_MSDG_ERROR       0x04
-#define DDR_PHY_INIT_TRAIN_ERROR            0x05
-/* 0x06 to 0xFF reserved for future use */
 
 /* TWI pass-through temperature read command parms */
 #define EXP_TWI_TEMP_READ_RESPONSE_DATA_LEN     24
@@ -263,8 +200,38 @@
 /* TWI bypass start-up timeout */
 #define EXP_TWI_BYPASS_4SEC_TIMEOUT             1
 
-/* 
-** TWI PQM command/response lengths 
+/* TWI CDR Offset Set command length */
+#define EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_CMD_DATA_LEN         2
+#define EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_CMD_LEN              (EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_CMD_DATA_LEN + 2)
+#define EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_RSP_DATA_LEN         1
+#define EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_RSP_LEN              (EXP_TWI_EXP_FW_CDR_OFFSET_FROM_CAL_SET_RSP_DATA_LEN + 1)
+
+/* TWI CDR Bandwidth Set command length */
+#define EXP_TWI_EXP_FW_CDR_BANDWIDTH_SET_CMD_DATA_LEN         2
+#define EXP_TWI_EXP_FW_CDR_BANDWIDTH_SET_CMD_LEN              (EXP_TWI_EXP_FW_CDR_BANDWIDTH_SET_CMD_DATA_LEN + 2)
+
+/* TWI SerDes continuous cal disable command length */
+#define EXP_TWI_EXP_FW_CONT_SERDES_CAL_DISABLE_CMD_DATA_LEN         1
+#define EXP_TWI_EXP_FW_CONT_SERDES_CAL_DISABLE_CMD_LEN              (EXP_TWI_EXP_FW_CONT_SERDES_CAL_DISABLE_CMD_DATA_LEN + 2)
+
+/* TWI PRBS cal status length */
+#define EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_CMD_LEN              1
+#define EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_RSP_DATA_LEN         5
+#define EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_RSP_LEN              (EXP_TWI_EXP_FW_PRBS_CAL_STATUS_READ_RSP_DATA_LEN + 1)
+
+/* TWI Read active logs command length */
+#define EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_CMD_LEN              1
+#define EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_LEN              (EXP_TWI_MAX_BUF_SIZE)
+#define EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_DATA_LEN         (EXP_TWI_EXP_FW_READ_ACTIVE_LOGS_RSP_LEN - 2)
+
+/* TWI Read Saved DDR params command length */
+#define EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_CMD_DATA_LEN         1
+#define EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_CMD_LEN              (EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_CMD_DATA_LEN + 2)
+#define EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_DATA_LEN         (254)
+#define EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_LEN              (EXP_TWI_EXP_FW_READ_SAVED_DDR_PARAMS_RSP_DATA_LEN + 2)
+
+/*
+** TWI PQM command/response lengths
 ** For commands containing command ID and length, '2' is added to
 ** the data length to get the actual command length.
 */
@@ -389,12 +356,6 @@
 #define EXP_SERDES_4_LANE_PAT_BITMASK   0xA5   /**< Enabled lanes: 0, 2, 5, 7 */
 #define EXP_SERDES_8_LANE_PAT_BITMASK   0xFF   /**< Enabled Lanes: 0, 1, 2, 3, 4, 5, 6, 7 */
 
-/* SerDes lane configuration errors */
-#define EXP_SERDES_LANE_OOR             1
-#define EXP_SERDES_LANE_UNSUPPORTED     2
-#define EXP_SERDES_LANE_SERDES_INIT_ERR 3
-#define EXP_SERDES_LANE_PHY_RESET_ERR   4
-#define EXP_SERDES_LANE_DL_RESET_ERR    5
 
 /* SerDes support frequency configurations */
 #define EXP_SERDES_21_33_GBPS           1
@@ -402,18 +363,6 @@
 #define EXP_SERDES_25_60_GBPS           3
 
 
-/* SerDes read adaptation object error */
-#define EXP_SERDES_READ_ADAPT_OBJ_ERROR 1
-
-/* SerDes calibration errors */
-#define EXP_SERDES_RX_CALIB_ERROR       1
-#define EXP_SERDES_CSU_CALIB_ERROR      1
-
-/* frequency configuration errors */
-#define EXP_SERDES_FREQ_NA              1
-
-/* PRBS configuration error */
-#define EXP_PRBS_PATTERN_NA             1
 
 /* PRBS error count errors */
 #define EXP_PRBS_MONITOR_DISABLED       1
@@ -433,19 +382,20 @@
 #define ECH_PQM_PRBS_PATTERN_CJPAT      0x08
 #define ECH_PQM_PRBS_PATTERN_CJTPAT     0x09
 
-/* Horizontal Bathtub data capture failure */
-#define EXP_HORZ_BATHTUB_FAILURE        1
-
-/* Vertical Bathtub data capture failure */
-#define EXP_VERT_BATHTUB_FAILURE        1
-
-/* 2 Dimensional data capture failure */
-#define EXP_2D_BATHTUB_FAILURE          1
 
 /* phases for 2D bathtub */
 #define EXP_2D_BATHTUB_PHASES           32
 #define EXP_2D_BATHTUB_PHASE_MIN        -16
 #define EXP_2D_BATHTUB_PHASE_MAX        15
+
+
+/* 
+** watchdog timeout values 
+** hardware watchdog timer is used to recover if VPE0 hangs
+** interval watchdog timer is used to recover if VPE1 hangs
+*/
+#define EXP_HARDWARE_WDT_TIMEOUT_10_SEC 10000
+#define EXP_INTERVAL_WDT_TIMEOUT_10_SEC 10000
 
 
 /*
@@ -464,7 +414,7 @@
 *
 * @param [in] err_suffix - 12-bit error suffix.  See above for details.
 *
-* @return 
+* @return
 *   Error code in format described above.
 *
 * @note
@@ -481,11 +431,10 @@
 #define EXP_INVALID_CTRL_LIST_ERR           ECH_ERR_CODE_CREATE(0x0003) /* invalid control list pointer */
 #define EXP_INVALID_FUNC_PTR_ERR            ECH_ERR_CODE_CREATE(0x0004) /* invalid function pointer */
 #define EXP_INVALID_FUNC_CMD_ERR            ECH_ERR_CODE_CREATE(0x0005) /* invalid function command */
-#define EXP_FW_LOG_OP_NO_ACTIVE_LOG         ECH_ERR_CODE_CREATE(0x0006) /* no active firmware log */ 
-#define EXP_FW_LOG_OP_NO_STORED_LOG         ECH_ERR_CODE_CREATE(0x0007) /* no stored firmware log */ 
-#define EXP_TWI_INVALID_CMD                 ECH_ERR_CODE_CREATE(0x0008) /* invalid exp_twi_cmd_enum command. */
-#define EXP_INVALID_DATA_LENGTH             ECH_ERR_CODE_CREATE(0x0009) /* invalid data length request */ 
-#define EXP_INVALID_ADDR                    ECH_ERR_CODE_CREATE(0x000A) /* invalid address request */ 
+/*
+** [XXX] In the future, remove the following log code when removing the function log_spi_flash_store.
+*/
+#define EXP_FW_LOG_OP_NO_ACTIVE_LOG         ECH_ERR_CODE_CREATE(0x0006) /* no active firmware log */
 
 /*
 * Enumerated Types
@@ -497,17 +446,17 @@
 */
 typedef enum
 {
-    EXP_FW_TWI_CMD_NULL = 0,                        /**< Null command */
+    EXP_FW_TWI_CMD_NULL = 0x00000000,               /**< Null command */
     EXP_FW_TWI_CMD_BOOT_CONFIG,                     /**< Boot config */
     EXP_FW_TWI_CMD_STATUS,                          /**< Status */
     EXP_FW_TWI_CMD_REG_ADDR_LATCH,                  /**< Address latch */
     EXP_FW_TWI_CMD_REG_READ,                        /**< Register read */
     EXP_FW_TWI_CMD_REG_WRITE,                       /**< Register write */
     EXP_FW_TWI_CMD_FW_DOWNLOAD,                     /**< Firmware download */
-    EXP_FW_CONT_REG_READ,                           /**< Continuous read */
-    EXP_FW_CONT_REG_WRITE,                          /**< Continuous write */
+    EXP_FW_CONT_REG_READ,                           /**< Continuous read  ***DEPRECATED*** */
+    EXP_FW_CONT_REG_WRITE,                          /**< Continuous write ***DEPRECATED*** */
     EXP_FW_BYPASS_4SEC_TIMEOUT,                     /**< Skip the 4 sec wait */
-    EXP_FW_PQM_LANE_SET,                            /**< Set SerDes lane configuration */ 
+    EXP_FW_PQM_LANE_SET,                            /**< Set SerDes lane configuration */
     EXP_FW_PQM_LANE_GET,                            /**< Get SerDes lane configuration */
     EXP_FW_PQM_FREQ_SET,                            /**< Set SerDes clock frequency */
     EXP_FW_PQM_FREQ_GET,                            /**< Get SerDes clock frequency */
@@ -533,7 +482,13 @@ typedef enum
     EXP_FW_PQM_2D_BATHTUB_GET_READ,
     EXP_FW_PQM_FORCE_DELAY_LINE_UPDATE,             /**< Command to force DDR PHY delay line update */
     EXP_FW_TWI_POLL_ABORT,                          /**< Command to abort config guide polling sequence */
-    EXP_FW_TWI_FFE_SETTINGS,                        /**< Command to set FFE PRE and POST cursor values priot too boot config */
+    EXP_FW_TWI_FFE_SETTINGS,                        /**< Command to set FFE PRE and POST cursor values prior too boot config */
+    EXP_FW_CDR_OFFSET_FROM_CAL_SET,                 /**< Command to sweep the CDR offset from the calibrated value */
+    EXP_FW_CDR_BANDWIDTH_SET,                       /**< Command to set CDR prop and accum gain before CDR calibration */
+    EXP_FW_PRBS_CAL_STATUS_READ,                    /**< Command to report further information about the PRBS cal that was performed */
+    EXP_FW_CONT_SERDES_CAL_DISABLE,                 /**< Command to disable / re-enable SerDes continuous calibration */
+    EXP_FW_READ_ACTIVE_LOGS,                        /**< Command to read logs over the TWI interface */
+    EXP_FW_READ_SAVED_DDR_PARAMS,                   /**< Command to read DDR parameters that are saved in flash over the TWI interface */
     EXP_FW_TWI_CMD_MAX
 
 } exp_twi_cmd_enum;
@@ -545,17 +500,17 @@ typedef enum
 typedef enum
 {
     EXP_FW_NULL_CMD = 0,                    /**< Null command */
-    EXP_FW_PHY_STEP_BY_STEP_INIT,           /**< Initialize DDR controller step-by-step */
+    EXP_FW_PHY_STEP_BY_STEP_INIT,           /**< Initialize DDR controller step-by-step - DEPRECATED */
     EXP_FW_DDR_PHY_INIT,                    /**< Initialize DDR PHY interface */
     EXP_FW_TEMP_SENSOR_PASS_THROUGH_READ,   /**< Initialize the temperature sensor */
     EXP_FW_TEMP_SENSOR_PASS_THROUGH_WRITE,  /**< Initialize the temperature sensor */
     EXP_FW_TEMP_SENSOR_CONFIG_INTERVAL_READ,/**< Initialize the temperature sensor */
-    EXP_FW_GO_COMMAND,                      /**< Execute firmware */
+    EXP_FW_GO_COMMAND,                      /**< Execute firmware - DEPRECATED */
     EXP_FW_ADAPTER_PROPERTIES_GET,          /**< Get adapter properties */
     EXP_FW_BINARY_UPGRADE,                  /**< Firmware upgrade with binary image */
     EXP_FW_FLASH_LOADER_VERSION_INFO,       /**< Get flash loader version information */
     EXP_FW_LOG,                             /**< Access and manage firmware logs */
-    EXP_FW_MAX_CMD 
+    EXP_FW_MAX_CMD
 
 } exp_cmd_enum;
 
@@ -581,7 +536,262 @@ typedef enum
     EXP_FW_PHY_INIT_DEFAULT_TRAIN   = 0,   /**< Standard PHY training with response */
     EXP_FW_PHY_INIT_READ_EYE_TRAIN  = 1,   /**< Train and return 2D read eye */
     EXP_FW_PHY_INIT_WRITE_EYE_TRAIN = 2,   /**< Train and return 2D write eye */
+    EXP_FW_PHY_INIT_RESET           = 3    /**< Place PHY in reset, apply power, and take PHY out of reset */
 } exp_phy_init_cmd_ops;
+
+
+/*
+** **************************************************************
+**
+** This next section defines the response codes for TWI commands.
+**
+** **************************************************************
+*/
+
+/**
+* @brief
+*   Status codes returned in response to the
+*   EXP_FW_TWI_CMD_STATUS command.
+*
+* @note
+*   As defined in the FW Arch Doc, this is bit[8:15] of the
+*   status DWORD sent back to the host. Each response code can
+*   be a maximum of 8-bits.
+*
+*/
+typedef enum
+{
+    /* TWI command success value */
+    EXP_TWI_SUCCESS                                             = 0x00,
+
+    /* TWI error values */
+    EXP_TWI_ERROR                                               = 0xC0,
+    EXP_TWI_UNSUPPORTED                                         = 0xD0,
+
+    /* TWI Busy Status*/
+    EXP_TWI_BUSY                                                = 0xFE,
+
+    /*
+    ** Top level TWI boot config error bit masks
+    **
+    ** EXP_FW_TWI_CMD_BOOT_CONFIG
+    */
+    EXP_TWI_BOOT_CFG_FAILED_BITMSK                              = 0x01,
+    EXP_TWI_BOOT_CFG_SERDES_LOOPBACK_FAIL_BITMASK               = 0x02,
+    EXP_TWI_BOOT_CFG_SERDES_INIT_FAIL_BITMASK                   = 0x04,
+    EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK                     = 0x08,
+    EXP_TWI_BOOT_CFG_SERDES_LANE_INVERSION_CONFIG_FAIL_BITMSK   = 0x10,
+    EXP_TWI_BOOT_CFG_SERDES_FATAL_FOUND_BITMASK                 = 0x20,
+    EXP_TWI_BOOT_CFG_DLX_PAT_A_B_FAIL_BITMASK                   = 0x40,
+
+    /*
+    ** SerDes lane configuration errors
+    **
+    ** EXP_FW_PQM_LANE_SET
+    */
+    EXP_SERDES_LANE_OOR                                         = 1,
+    EXP_SERDES_LANE_UNSUPPORTED                                 = 2,
+    EXP_SERDES_LANE_SERDES_INIT_ERR                             = 3,
+    EXP_SERDES_LANE_PHY_RESET_ERR                               = 4,
+    EXP_SERDES_LANE_DL_RESET_ERR                                = 5,
+
+    /*
+    ** frequency configuration errors
+    **
+    ** EXP_FW_PQM_FREQ_SET
+    */
+    EXP_SERDES_FREQ_NA                                          = 1,
+
+    /*
+    ** PRBS configuration error
+    **
+    ** EXP_FW_PQM_PRBS_PATTERN_MODE_SET
+    */
+    EXP_PRBS_PATTERN_NA                                         = 1,
+
+    /*
+    ** SerDes calibration errors
+    **
+    ** EXP_FW_PQM_RX_CALIBRATION_VALUE_START
+    ** EXP_FW_PQM_CSU_CALIBRATION_VALUE_STATUS_START
+    */
+    EXP_SERDES_RX_CALIB_ERROR                                   = 1,
+    EXP_SERDES_CSU_CALIB_ERROR                                  = 1,
+
+    /*
+    ** SerDes read adaptation object error
+    **
+    ** EXP_FW_PQM_RX_ADAPTATION_OBJ_START
+    */
+    EXP_SERDES_READ_ADAPT_OBJ_ERROR                             = 1,
+
+    /*
+    ** Horizontal Bathtub data capture failure
+    **
+    ** EXP_FW_PQM_HORIZONTAL_BATHTUB_GET_START
+    */
+    EXP_HORZ_BATHTUB_FAILURE                                    = 1,
+
+    /*
+    ** Vertical Bathtub data capture failure
+    **
+    ** EXP_FW_PQM_VERTICAL_BATHTUB_GET_START
+    */
+    EXP_VERT_BATHTUB_FAILURE                                    = 1,
+
+    /*
+    ** 2 Dimensional data capture failure
+    **
+    ** EXP_FW_PQM_2D_BATHTUB_GET_START
+    */
+    EXP_2D_BATHTUB_FAILURE                                      = 1
+
+} exp_twi_status_enum;
+
+
+/**
+* @brief
+*   Extended Error codes returned in response to the
+*   EXP_FW_TWI_CMD_STATUS command.
+*
+* @note
+*   As defined in the FW Arch Doc, this is bit[24:31] of the
+*   status DWORD sent back to the host. Each Extended Error code
+*   can be a maximum of 8-bits.
+*
+*/
+typedef enum
+{
+    /* Extended Error code for EXP_TWI_BOOT_CFG_FAILED_BITMSK */
+    EXP_TWI_BOOT_CFG_UNSUPPORTED_SERDES_FREQ_BITMSK     = 0x01,
+    EXP_TWI_BOOT_CFG_UNSUPPORTED_TL_BITMSK              = 0x02,
+    EXP_TWI_BOOT_CFG_UNSUPPORT_LANE_CONFIG_BITMSK       = 0x04,
+    EXP_TWI_BOOT_CFG_UNSUPPORT_LOOPBACK_CONFIG_BITMSK   = 0x08,
+    EXP_TWI_BOOT_CFG_UNSUPPORTED_BOOT_STAGE             = 0x10,
+
+    /* Extended Error code for EXP_TWI_BOOT_CFG_DLX_CONFIG_FAIL_BITMSK */
+    EXP_TWI_BOOT_CFG_DLX_CONFIG_FW_FAILED               = 0x02,
+
+    /* Extended Error code for EXP_TWI_BOOT_CFG_DLX_PAT_A_B_FAIL_BITMASK */
+    EXP_TWI_BOOT_CFG_DLX_CONFIG_PATTERN_A_B_FAILED      = 0x01,
+
+    /* Extended Error code for EXP_TWI_BOOT_CFG_SERDES_INIT_FAIL_BITMASK and EXP_TWI_BOOT_CFG_SERDES_LOOPBACK_FAIL_BITMASK */
+    EXP_SERDES_TRAINING_FREQ_UNSUPPORTED                = 0x01,
+    EXP_SERDES_TRAINING_CSU_FAILED_1                    = 0x02,
+    EXP_SERDES_TRAINING_CALIB_FAILED                    = 0x03,
+    EXP_SERDES_TRAINING_ADAPT1_FAILED                   = 0x04,
+    EXP_SERDES_FH_ALIGNMENT1_FAILED                     = 0x05,
+    EXP_SERDES_FH_ALIGNMENT2_FAILED                     = 0x06,
+    EXP_SERDES_DDLL_LOCK_FAIL                           = 0x07,
+    EXP_SERDES_DEASSERT_PHY_OCMB_RESET_FAIL             = 0x08,
+    EXP_SERDES_FH_ALIGNMENT_INIT_1_FAIL                 = 0x09,
+    EXP_SERDES_FH_TX_ALIGNMENT_FAIL                     = 0x0a,
+    EXP_SERDES_FH_PATTERNGEN_ENABLE_FAIL                = 0x0b,
+    SERDES_FH_TXRX_ADAPTATION_1_PE_FAIL                 = 0x0c,
+    EXP_SERDES_FH_PATTERNMON_ENABLE_FAIL                = 0x0d,
+    EXP_TWI_BOOT_CFG_SERDES_LOOPBACK_LANE_ID_FAIL       = 0x0e,
+    EXP_SERDES_TRAINING_ADAPT2_FAILED                   = 0x0f,
+    EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_1_FAILED      = 0x10,
+    EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_2_FAILED      = 0x11,
+    EXP_SERDES_DATA_IQ_OFFSET_CALIBRATION_3_FAILED      = 0x12,
+    EXP_SERDES_DATA_IQ_OFFSET_OUT_OF_RANGE              = 0x13,
+    EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_1_FAILED    = 0x14,
+    EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_2_FAILED    = 0x15,
+    EXP_SERDES_TIMING_IQ_OFFSET_CALIBRATION_3_FAILED    = 0x16,
+    EXP_SERDES_TIMING_IQ_OFFSET_OUT_OF_RANGE            = 0x17,
+    EXP_SERDES_IQ_OFFSET_CALIBRATION_4_FAILED           = 0x18,
+    EXP_SERDES_CDR_CALIBRATION_ADPT_FAILED_1            = 0x19,
+    EXP_SERDES_CDR_CALIBRATION_OUT_OF_RANGE             = 0x20,
+    EXP_SERDES_CDR_CALIBRATION_NOT_CONVERGED            = 0x21,
+    EXP_SERDES_PRBS_NOT_DETECTED                        = 0x22,
+    EXP_SERDES_TRAINING_CSU_FAILED_2                    = 0x23,
+    EXP_SERDES_CDR_CALIBRATION_ADPT_FAILED_2            = 0x24,
+    EXP_SERDES_CDR_CALIBRATION_ADPT_FAILED_3            = 0x25,
+
+    /* Extended Error code for EXP_TWI_BOOT_CFG_SERDES_LANE_INVERSION_CONFIG_FAIL_BITMSK */
+    EXP_TWI_BOOT_CFG_SERDES_FH_RX_ALIGNMENT_FAIL        = 0x01,
+    EXP_TWI_BOOT_CFG_SERDES_RX_PATB_TIMEOUT_FAIL        = 0x02,
+
+    /* TWI register read/write errors */
+    EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE                    = 0x01,
+    EXP_TWI_REG_RW_ADDR_PROHIBITED                      = 0x02,
+    EXP_TWI_REG_RW_ADDR_INVALID                         = 0x03,
+    EXP_TWI_REG_RW_WRITE_ONLY                           = 0x04,
+    EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID               = 0x05,
+    EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID              = 0x06,
+
+    /*
+    ** TWI FFE extended error codes
+    ** Implemented as bit fields to allow identification of which setting(s) was in error
+    */
+    EXP_TWI_FFE_ERROR_INVALID_PRECURSOR_BIT_FLAG        = 0x01,
+    EXP_TWI_FFE_ERROR_INVALID_POSTCURSOR_BIT_FLAG       = 0x02,
+    EXP_TWI_FFE_ERROR_INVALID_CALIBRATION_BIT_FLAG      = 0x04,
+
+} exp_twi_status_ext_err_code_enum;
+
+/*
+** **************************************************************
+**
+** This next section defines the response codes for OMI commands.
+**
+** **************************************************************
+*/
+
+/**
+* @brief
+*   Error code returned for OMI command EXP_FW_DDR_PHY_INIT.
+*
+* @note
+*
+*/
+typedef enum
+{
+    /* Error codes for EXP_FW_DDR_PHY_INIT_RESP */
+    DDR_PHY_INIT_RESP_SUCCESS               = 0x00,
+    DDR_PHY_INIT_UNSUPPORTED_INIT_MODE      = 0x01,
+    DDR_PHY_INIT_INPUT_MSDG_SIZE_ERROR      = 0x02,
+    DDR_PHY_INIT_INPUT_MSDG_NO_EXT_DATA     = 0x03,
+    DDR_PHY_INIT_INPUT_MSDG_ERROR           = 0x04,
+    DDR_PHY_INIT_TRAIN_ERROR                = 0x05,
+    /* 0x06 to 0xFF reserved for future use */
+} exp_omi_ddr_phy_init_err_code_enum;
+
+
+/**
+* @brief
+*   Error code returned for OMI command
+*   EXP_FW_TEMP_SENSOR_CONFIG_INTERVAL_READ.
+*
+* @note
+*
+*/
+typedef enum
+{
+    /* Error codes for EXP_FW_TEMP_SENSOR_CONFIG_INTERVAL_READ */
+    TEMP_SENSOR_INTERVAL_READ_SUCCESS           = 0x00,
+    TEMP_ERR_ONCHIP_REG_READ_LEN_UNSUPPORTED    = 0x01,
+    TEMP_ERR_FW_MANAGED_UNSUPPORTED             = 0x02,
+} exp_omi_temp_sensor_interval_read_err_code_enum;
+
+
+/**
+* @brief
+*   Error code returned for OMI command EXP_FW_LOG.
+*
+* @note
+*
+*/
+typedef enum
+{
+    /* Error codes for EXP_FW_LOG */
+    LOG_OP_SUCCESS              = 0x00,
+    LOG_OP_NO_ACTIVE_LOG        = 0x01,
+    LOG_OP_INVALID_ADDR         = 0x02,
+    LOG_OP_INVALID_DATA_LEN     = 0x03,
+    LOG_OP_NO_SAVED_LOG         = 0x04
+} exp_omi_log_err_code_enum;
+
 
 /*
 * Structures and Unions
@@ -624,9 +834,9 @@ typedef struct
 
 } exp_rsp_struct;
 
-/** 
-*  @brief 
-*   Explorer Log command operands 
+/**
+*  @brief
+*   Explorer Log command operands
 */
 typedef __packed struct
 {
@@ -637,9 +847,9 @@ typedef __packed struct
 
 } exp_fw_log_cmd_parms_struct;
 
-/** 
-*  @brief 
-*   Explorer Log response operands 
+/**
+*  @brief
+*   Explorer Log response operands
 */
 typedef __packed struct
 {
@@ -650,8 +860,8 @@ typedef __packed struct
 
 } exp_fw_log_rsp_parms_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer phy init response operands
 */
 typedef __packed struct
@@ -678,8 +888,7 @@ typedef __packed struct
 typedef __packed struct
 {
     UINT8  status;             /**< Operation pass/fail status */
-    UINT16 err_code;           /**< Specific error code if operation failed */
-    UINT8  reserved;           /**< Reserved for future use */
+    UINT8  reserved[3];        /**< Reserved for future use */
     UINT8  resp_data[EXP_TWI_TEMP_READ_RESPONSE_DATA_LEN];  /** Data read from the starting offset */
 } exp_fw_temp_read_rsp_parms_struct;
 
@@ -701,7 +910,7 @@ typedef __packed struct
 typedef __packed struct
 {
     UINT8  status;             /**< Operation pass/fail status */
-    UINT16 err_code;           /**< Specific error code if operation failed */
+    UINT8  reserved[2];        /**< Reserved for future use */
 } exp_fw_temp_write_rsp_parms_struct;
 
 /**
@@ -727,7 +936,7 @@ typedef __packed struct
     UINT8  onboard_dimm0_twi_reg_length;  /**< onboard dimm0 I2C address register length */
     UINT8  onboard_dimm1_twi_address;     /**< onboard dimm1 I2C address */
     UINT8  onboard_dimm1_twi_reg_offset;  /**< onboard dimm1 I2C register offset */
-    UINT8  onboard_dimm1_twi_reg_length; /**< onboard dimm1 I2C address register offset size */
+    UINT8  onboard_dimm1_twi_reg_length;  /**< onboard dimm1 I2C address register offset size */
     UINT8  onchip_config_flags;           /**< onchip configuration flags */
     UINT8  onchip_twi_address;            /**< onchip I2C address */
     UINT16 onchip_twi_reg_offset_0;       /**< onchip I2C register offset 0 */
@@ -735,6 +944,17 @@ typedef __packed struct
     UINT16 read_interval_ms;              /**< temperature sensor read interval ms */
     UINT8  reserved[14];                  /**< 14 bytes reserved */
 } exp_fw_temp_interval_read_cmd_parms_struct;
+
+/**
+*  @brief
+*   Explorer interval temperature write cmd operands
+*/
+typedef __packed struct
+{
+    UINT8   status;     /**< Operation pass/fail status */
+    UINT16  err_code;   /**< Specific error code if operation failed */
+    UINT8   reserved;
+} exp_fw_temp_interval_read_rsp_parms_struct;
 
 /**
 *  @brief
@@ -746,8 +966,8 @@ typedef struct
 
 } exp_pqm_lanes_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Frequency Set/Get command/response
 */
 typedef struct
@@ -756,8 +976,8 @@ typedef struct
 
 } exp_pqm_freq_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Receive Adapation Object
 */
 typedef struct
@@ -774,8 +994,8 @@ typedef struct
 
 } exp_pqm_rx_adapt_obj_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Receive Calibration Value
 */
 typedef struct
@@ -794,8 +1014,8 @@ typedef struct
 
 } exp_pqm_rx_calib_value_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM CSU Calibration Value Status
 */
 typedef struct
@@ -809,8 +1029,8 @@ typedef struct
 
 } exp_pqm_csu_calib_value_status_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM PRBS Pattern Mode
 */
 typedef struct
@@ -819,8 +1039,8 @@ typedef struct
 
 } exp_pqm_prbs_pattern_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM PRBS User Defined Pattern
 */
 typedef struct
@@ -829,18 +1049,19 @@ typedef struct
 
 } exp_pqm_prbs_user_pattern_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM PRBS Error Count
 */
 typedef struct
 {
     UINT32 count[EXP_SERDES_8_LANE];
+    UINT32 time_diff_ms;
 
 } exp_pqm_prbs_error_count_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Horizontal Bathtub
 */
 typedef struct
@@ -880,8 +1101,8 @@ typedef struct
 
 } exp_pqm_horz_bt_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Vertical Bathtub
 */
 typedef struct
@@ -953,8 +1174,8 @@ typedef struct
 
 } exp_pqm_vert_bt_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer PQM Data Union
 */
 typedef union
@@ -972,8 +1193,8 @@ typedef union
 
 } exp_pqm_data_struct;
 
-/** 
-*  @brief 
+/**
+*  @brief
 *   Explorer TXRX AdaptObj Force
 */
 typedef struct

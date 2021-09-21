@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -47,6 +47,7 @@
 #include "ocmb.h"
 #include "opsw_api.h"
 #include "serdes_plat.h"
+#include "top_plat.h"
 
 
 /*
@@ -84,7 +85,6 @@ EXTERN UINT8 __ghsbegin_fw_boot_cfg[];
 ** Global Variables
 */
 
-
 /*
 ** Local Variables
 */
@@ -112,6 +112,34 @@ UINT8 ech_use_host_d_iq_offset = 0;
 
 /* D_IQ_OFFSET values from host */
 PRIVATE UINT8 ech_d_iq_offset_val[8];
+
+/* 
+** active lane bit mask
+** may vary from configured if training results in degraded mode 
+** x8 degrades to x4 
+** x4 degrades to x2 
+** x8 to x2 is not supported 
+*/
+PRIVATE UINT8 ech_active_lane_bitmask = 0x00; 
+
+/* 
+** Bitmasks to store status during PRBS calibration which can 
+** be returned to the host.
+*/ 
+PRIVATE UINT8 ech_pattmon_detected_bitmask = 0x00;
+PRIVATE UINT8 ech_cal_converged_bitmask = 0x00;
+
+/*
+** CDR bandwidth settings
+*/
+#define CDR_PROP_GAIN_MAX   0x7F
+#define CDR_INTEG_GAIN_MAX  0xFF
+
+#define CDR_PROP_GAIN_DEFAULT   0xA
+#define CDR_INTEG_GAIN_DEFAULT  0x0
+
+PRIVATE UINT8 serdes_cdr_prop_gain = CDR_PROP_GAIN_DEFAULT;
+PRIVATE UINT8 serdes_cdr_integ_gain = CDR_INTEG_GAIN_DEFAULT;
 
 /*
 * Private Functions
@@ -174,7 +202,7 @@ PRIVATE void ech_rsp_buffer_crash_dump(VOID)
 */
 PUBLIC VOID ech_init(VOID)
 {
-    /* initialize the OPenCAPI interface handler */
+    /* initialize the OpenCAPI interface handler */
     ech_oc_init();
 
     /* clear the configuration flags */
@@ -183,9 +211,9 @@ PUBLIC VOID ech_init(VOID)
     /* Default is for the DFE state to be enabled. */
     ech_boot_cfg_ptr->dfe_state = TRUE;
 
-    crash_dump_register("ECH_BOOT_CFG", &ech_boot_config_crash_dump, CRASH_DUMP_RAW, sizeof(ech_boot_cfg_struct));
-    crash_dump_register("ECH_CMD_BUFFER", &ech_cmd_buffer_crash_dump, CRASH_DUMP_RAW, ech_cmd_size_get());
-    crash_dump_register("ECH_RSP_BUFFER", & ech_rsp_buffer_crash_dump, CRASH_DUMP_RAW, ech_rsp_size_get());
+    crash_dump_register(CRASH_DUMP_SET_0, "ECH_BOOT_CFG", &ech_boot_config_crash_dump, CRASH_DUMP_RAW, sizeof(ech_boot_cfg_struct));
+    crash_dump_register(CRASH_DUMP_SET_0, "ECH_CMD_BUFFER", &ech_cmd_buffer_crash_dump, CRASH_DUMP_RAW, ech_cmd_size_get());
+    crash_dump_register(CRASH_DUMP_SET_0, "ECH_RSP_BUFFER", & ech_rsp_buffer_crash_dump, CRASH_DUMP_RAW, ech_rsp_size_get());
 
 } /* ech_init */
 
@@ -255,7 +283,15 @@ PUBLIC BOOL ech_reg_addr_validate(UINT32 addr)
 */
 PUBLIC VOID ech_cmd_rxd_clr(VOID)
 {
+    top_plat_lock_struct lock_struct;
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     ocmb_api_rxd_clr();
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
 }
 
 /**
@@ -269,7 +305,15 @@ PUBLIC VOID ech_cmd_rxd_clr(VOID)
 */
 PUBLIC VOID ech_cmd_rxd_flag_set(VOID)
 {
+    top_plat_lock_struct lock_struct;
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     ocmb_api_rxd_flag_set();
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
 }
 
 /**
@@ -690,6 +734,36 @@ PUBLIC UINT8 ech_lane_cfg_pattern_bitmask_get(VOID)
 
 /**
 * @brief
+*   Returns the lane pattern bitmask for the lanes that
+*   successfully trained.
+*
+* @return
+*   The lane pattern check bitmask
+*
+* @note
+*/
+PUBLIC UINT8 ech_lane_active_pattern_bitmask_get(VOID)
+{
+    return (ech_active_lane_bitmask);
+}
+
+/**
+* @brief
+*   Records the lane pattern bitmask for the lanes that
+*   successfully trained.
+*  
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_lane_active_pattern_bitmask_set(UINT8 lane_bitmask)
+{
+    ech_active_lane_bitmask = lane_bitmask;
+}
+
+/**
+* @brief
 *   Returns the latched register address
 *
 * @return
@@ -827,6 +901,242 @@ PUBLIC VOID ech_adaptation_state_set(UINT32 adaptation_state_val)
 PUBLIC BOOL ech_adaptation_state_get(VOID)
 {
     return (ech_boot_cfg_ptr->adapt_state);
+}
+
+/**
+* @brief
+*   Set the improved serdes algorithm enable state for internal
+*   firmware tracking.
+* 
+* @param [in] serdes_prbs_cal_state_val - Enable to use the
+*        improved PRBS SERDES calibration algorithm:
+*        TRUE=enabled FALSE=disabled
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_serdes_prbs_cal_state_set(BOOL serdes_prbs_cal_state_val)
+{
+    ech_boot_cfg_ptr->serdes_prbs_cal_enable = serdes_prbs_cal_state_val;
+}
+
+/**
+* @brief
+*   Get the improved serdes algorithm enable state.
+* 
+* @param 
+*   None
+*
+* @return
+*   TRUE = SerDes PRBS calibration algorithm enabled
+*   FALSE = SerDes PRBS calibration algorithm disabled.
+*
+* @note
+*/
+PUBLIC BOOL ech_serdes_prbs_cal_state_get(VOID)
+{
+    return (ech_boot_cfg_ptr->serdes_prbs_cal_enable);
+}
+
+/**
+* @brief
+*   Store the CDR proportional gain.
+*  
+* @param [in] prop_gain: 	LF_PROP_CTRL_GAIN to apply in boot 
+*        config
+* @return
+*   TRUE for success, FALSE for parameter out of range
+* 
+* @note 
+* 
+*/
+PUBLIC BOOL ech_serdes_cdr_prop_gain_set(UINT8 prop_gain)
+{
+    if (prop_gain > CDR_PROP_GAIN_MAX) 
+    {
+        return FALSE;
+    }
+
+    serdes_cdr_prop_gain = prop_gain;
+
+    return TRUE;
+}
+
+/**
+* @brief
+*   Store the CDR integral path gain.
+*  
+* @param [in] integ_gain: 	LF_INTEG_CTRL_GAIN to apply in boot 
+*        config
+* @return
+*   TRUE for success, FALSE for parameter out of range
+*    
+* @note 
+* 
+*/
+PUBLIC BOOL ech_serdes_cdr_integ_gain_set(UINT8 integ_gain)
+{
+    if (integ_gain > CDR_INTEG_GAIN_MAX) 
+    {
+        return FALSE;
+    }
+
+    serdes_cdr_integ_gain = integ_gain;
+
+    return TRUE;
+}
+
+/**
+* @brief
+*   Get the CDR proportional gain.
+*  
+* @param 
+*   None
+*  
+* @return
+*   CDR prop gain setting
+* 
+* @note 
+* 
+*/
+PUBLIC UINT8 ech_serdes_cdr_prop_gain_get()
+{
+    return serdes_cdr_prop_gain;
+}
+
+/**
+* @brief
+*   Get the CDR integral gain.
+*  
+* @param 
+*   None
+*  
+* @return
+*   CDR integ gain setting
+* 
+* @note 
+* 
+*/
+PUBLIC UINT8 ech_serdes_cdr_integ_gain_get()
+{
+    return serdes_cdr_integ_gain;
+}
+
+/**
+* @brief
+*   Store status information gathered during SerDes
+*   PRBS calibration
+* 
+* @param [in] pattmon_detected_bitmask - Bitmask of the lanes
+*        where the pattern monitor detected PRBS before
+*        calibration.
+* @param [in] cal_converged_bitmask - Bitmask of the lanes where
+*        the pattern monitor detected PRBS after calibration.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_serdes_prbs_cal_data_set(UINT8 pattmon_detected_bitmask, UINT8 cal_converged_bitmask)
+{
+    ech_pattmon_detected_bitmask = pattmon_detected_bitmask;
+    ech_cal_converged_bitmask = cal_converged_bitmask;
+}
+
+/**
+* @brief
+*   Get status information gathered during SerDes
+*   PRBS calibration
+* 
+* @param [out] pattmon_detected_bitmask - Bitmask of the lanes
+*        where the pattern monitor detected PRBS before
+*        calibration.
+* @param [out] cal_converged_bitmask - Bitmask of the lanes
+*        where the pattern monitor detected PRBS after
+*        calibration.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_serdes_prbs_cal_data_get(UINT8 * pattmon_detected_bitmask, UINT8 * cal_converged_bitmask)
+{
+    *pattmon_detected_bitmask = ech_pattmon_detected_bitmask;
+    *cal_converged_bitmask = ech_cal_converged_bitmask;
+}
+
+
+/**
+* @brief
+*   Set the SerDes loopback state.
+* 
+* @param [in] serdes_loopback_state - Enable to use the SerDes
+*        loopback mode with PRBS calibration algorithm.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_serdes_loopback_set(BOOL serdes_loopback_state)
+{
+    ech_boot_cfg_ptr->serdes_loopback_state = serdes_loopback_state;
+}
+
+/**
+* @brief
+*   Get the SerDes loopback state.
+* 
+* @param 
+*   None
+*
+* @return
+*   TRUE = SerDes loopback mode selected
+*   FALSE = Normal operation
+*
+* @note
+*/
+PUBLIC BOOL ech_serdes_loopback_get(VOID)
+{
+    return (ech_boot_cfg_ptr->serdes_loopback_state);
+}
+
+/**
+* @brief
+*   Set the SerDes CSU offset mask in loopback mode
+* 
+* @param [in] serdes_csu_offset_mask - Lane bitmask of which
+*        lanes should have a CSU ppm offset applied.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_serdes_loopback_csu_offset_mask_set(BOOL serdes_csu_offset_mask)
+{
+    ech_boot_cfg_ptr->serdes_csu_offset_mask = serdes_csu_offset_mask;
+}
+
+/**
+* @brief
+*   Get the SerDes CSU offset mask.
+* 
+* @param 
+*   None
+*
+* @return
+*   Lane bitmask of which lanes have a CSU ppm offset applied.
+*
+* @note
+*/
+PUBLIC BOOL ech_serdes_loopback_csu_offset_mask_get(VOID)
+{
+    return (ech_boot_cfg_ptr->serdes_csu_offset_mask);
 }
 
 /**

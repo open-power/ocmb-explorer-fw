@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -185,7 +185,11 @@ EXTERN spi_cache_invalidate_fn_ptr_type spi_cache_invalidate_fn_ptr;
 */
 EXTERN void spi_init(spi_parms_struct *parms);
 EXTERN UINT32 spi_size_phys_to_log(const UINT8 port_id, const UINT32 size);
-EXTERN VOID spi_fatal_error_handler(void);
+EXTERN BOOL spi_fatal_error_handler(void);
+EXTERN VOID spi_fatal_init(void);
+EXTERN VOID spi_fatal_cecc_enable(void);
+EXTERN VOID spi_dump_debug_info(VOID);
+EXTERN UINT32 spi_size_log_to_phys(const UINT8 port_id, const UINT32 size);
 
 #endif /* _SPI_H */
 

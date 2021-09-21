@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -72,13 +72,13 @@
 #include "log_plat.h"
 #include "spi_plat.h"
 #include "busio.h"
-#include "dcsu_api.h"
 #include "spb_spi.h"
 #include "spi.h"
 #include "top.h"
+#include "top_plat.h"
 #include "serdes_cmdsvr.h"
 #include "fam_plat.h"
-#include "exp_pcse_timer.h"
+#include "opsw_timer.h"
 #include "fatal_plat.h"
 #include "serdes_plat.h"
 #include "crash_dump_plat.h"
@@ -90,6 +90,9 @@
 #include "flashloader.h"
 #include "flash_partition_info.h"
 #include "ech_twi_common.h"
+#include "ocmb_erep.h"
+#include "wdt.h"
+#include "pvt.h"
 
 #if (EXPLORER_BRINGUP == 1)
 EXTERN void expl_fca_bringup(void);
@@ -109,6 +112,13 @@ EXTERN void expl_fca_bringup(void);
 #define APP_FW_CHAR_IO_RUNTIME_CCB_SIZE         APP_FW_LOG_SIZE
 #define APP_FW_CHAR_IO_CRASH_CCB_SIZE           (1*1024)
 
+/*
+** Global Variables
+*/
+PUBLIC volatile UINT32 g_boot_timestamp = 0x0;
+
+PUBLIC volatile BOOL app_fw_oc_ready = FALSE;
+PRIVATE volatile BOOL start_second_vpe = FALSE;
 
 /*
 ** Forward References
@@ -117,8 +127,6 @@ EXTERN void expl_fca_bringup(void);
 EXTERN void _start_smp(void);
 EXTERN void adapter_info_module_init(void);
 
-PUBLIC volatile BOOL app_fw_oc_ready = FALSE;
-PRIVATE volatile BOOL start_second_vpe = FALSE;
 
 
 /*
@@ -220,13 +228,14 @@ PUBLIC int main(void)
 * @return
 *
 */
-void  _34K_VPE0_main(void)
+void _34K_VPE0_main(void)
 {
     tsh_parms_struct*  tsh_parms_ptr;
     spi_parms_struct*  spi_parms_ptr;
     VOID*  app_log_addr = NULL;
     UINT32 app_log_size = 0;
     PMCFW_ERROR rc;
+    top_plat_lock_struct lock_struct;
     
     uart_init(APP_FW_UART_ID,
               APP_FW_UART_BASE_ADDRESS,
@@ -252,9 +261,6 @@ void  _34K_VPE0_main(void)
     hal_cp0_timer_init(dcsu_cpu_clk_freq_get);
     hal_cp0_timer_register();
 
-    /* initialize timer0 as 1 Hz timer */
-    exp_timer0_init();
-
     /* Initialize circular buffer for string buffers. */
     ccb_init(APP_FW_CCB_BUFFER_COUNT);
     char_io_init(APP_FW_CHAR_IO_RUNTIME_CCB_SIZE, APP_FW_CHAR_IO_CRASH_CCB_SIZE);
@@ -267,6 +273,9 @@ void  _34K_VPE0_main(void)
 
     /* adjust pointers to functions in RAM to remove PIC offset */
     app_fw_ram_code_ptr_adjust();
+
+    /* initialize timer0 as 1 Hz system timer */
+    opsw_timer0_system_seconds_init();
 
     /* initialize crash dump */
     crash_dump_init();
@@ -303,7 +312,7 @@ void  _34K_VPE0_main(void)
     exp_gic_init();
 
     /* halt other core so SPI Flash driver can be initialized */
-    hal_disable_mvpe();
+    top_plat_critical_region_enter(&lock_struct);
 
     /* initialize the SPI driver */
     spi_parms_ptr = spi_parms_get();
@@ -323,10 +332,17 @@ void  _34K_VPE0_main(void)
     ** check redundant firmware image against active image
     ** and update redundant if it is older than active
     */
+
+    /* Disable uncorrectable ECC interrupts */
+    spb_spi_uecc_int_en(0, FALSE);
+
     spi_flash_plat_red_fw_image_update();
 
-    /* resume other core */
-    hal_enable_mvpe();
+    /* Re-enable uncorrectable ECC interrupts */
+    spb_spi_uecc_int_en(0, TRUE);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
 
 #if (EXPLORER_BRINGUP == 1)
     expl_fca_bringup();
@@ -374,17 +390,28 @@ void  _34K_VPE0_main(void)
     /* FATAL module platform initialization.*/
     fatal_plat_init();
 
+    /* Initialize the OCMB Error Reporting module. */
+    ocmb_erep_init();
+
     /* Initialize Flashloader module */
     flashloader_init();
 
+#if (EXPLORER_WDT_DISABLE == 0)
+    /* initialize and enable the hardware watchdog timer for VPE0 hangs */
+    wdt_hardware_tmr_init(EXP_HARDWARE_WDT_TIMEOUT_10_SEC);
+
+    /* initialize and enable the interval watchdog timer for VPE1 hangs */
+    wdt_interval_tmr_init(EXP_INTERVAL_WDT_TIMEOUT_10_SEC);
+#endif
+
     /* 
-    ** I2C is enabled after all modules but temperature sensor 
+    ** TWI is enabled after all modules but temperature sensor 
     ** module is initialized, which require I2C module to be 
     ** initialized first
-    **
     */
     spb_mux_init();
     spb_twi_init(SPB_TWI_INIT_PORT_ALL);
+
     /* initialize the TWI interface handler */
     ech_twi_init(EXP_TWI_MASTER_PORT, EXP_TWI_SLAVE_PORT, (top_bootstrap_twi_il_addr_get() >>1));
 
@@ -401,14 +428,19 @@ void  _34K_VPE0_main(void)
     /* Register TWIM command server */
     twim_cmdsvr_register();
 
+    /* record firmware version in PVT scratchpad register */
+    pvt_scratch_pad_set(FW_VERSION_CL_NUMBER);
+
     /*
-    ** Write the CP0 value into scratchpad register
-    ** This is a 4 x 32BIT register.
-    ** Offset 0 has been used for BOOTROM version information
-    ** Offset 4 is being used to store the total BOOT TIME
+    ** Write the CP0.Count value into global variable for PV purposes.
+    ** See request in EBCF-8630.
+    ** The value can be retrieved via a CMDSVR command.
     ** BOOT TIME means: Power-on to first I2C command.
     */
-    opsw_scratchpad_set(OPSW_SCRATCHPAD_1, hal_cp0_counter_get());
+    g_boot_timestamp = hal_cp0_counter_get();
+
+    bc_printf("[Firmware version] %d_%d_%d_%d \n",FW_VERSION_MAJOR_RELEASE_NUMBER,FW_VERSION_MINOR_RELEASE_NUMBER,FW_VERSION_CL_NUMBER,FW_VERSION_PATCH_RELEASE_NUMBER);
+    bc_printf("[Firmware build date] %x \n",FW_VERSION_BUILD_DATE);
 
     PMC_LOOP_FOREVER
     {
@@ -444,6 +476,14 @@ void  _34K_VPE0_main(void)
 
         /* process the UART interface */
         tsh_main_loop(APP_FW_TSH_SHELL_IDX, FALSE);
+
+        /* Run periodic serdes calibration if necessary */
+        serdes_plat_cal_update();
+
+#if (EXPLORER_WDT_DISABLE == 0)
+        /* kick VPE0 watchdog timer */
+        wdt_hardware_tmr_kick();
+#endif
     }
 }
 
@@ -466,7 +506,13 @@ void _34K_VPEx_main(void)
 
     PMC_LOOP_FOREVER
     {
+        /* service the TWI interface */
         ech_twi_slave_proc(EXP_TWI_SLAVE_PORT);
+
+#if (EXPLORER_WDT_DISABLE == 0)
+        /* kick VPE1 watchdog timer */
+        wdt_interval_tmr_kick();
+#endif
     }
 }
 

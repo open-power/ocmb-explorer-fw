@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -104,10 +104,6 @@ EXTERN spi_plat_wci_mode_get_fn_ptr_type spi_plat_wci_mode_get_fn_ptr;
 typedef PMCFW_ERROR (*spi_plat_flash_poll_write_erase_complete_fn_ptr_type)(BOOL write, UINT32 timeout);
 EXTERN spi_plat_flash_poll_write_erase_complete_fn_ptr_type spi_plat_flash_poll_write_erase_complete_fn_ptr;
 #define spi_plat_flash_poll_write_erase_complete (*spi_plat_flash_poll_write_erase_complete_fn_ptr)
-
-typedef PMCFW_ERROR (*spi_plat_flash_write_pages_fn_ptr_type)(UINT8* src_ptr, UINT8* dst_ptr, UINT32 len, UINT32 page_size, UINT32 timeout);
-EXTERN spi_plat_flash_write_pages_fn_ptr_type spi_plat_flash_write_pages_fn_ptr;
-#define spi_plat_flash_write_pages (*spi_plat_flash_write_pages_fn_ptr)
 
 EXTERN spi_parms_struct *spi_parms_get(VOID);
 EXTERN VOID spi_plat_init(VOID);

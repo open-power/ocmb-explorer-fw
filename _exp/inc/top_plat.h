@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -46,10 +46,27 @@
 #define TOP_DEV_ID_OVERRIDE_FLAG_VALUE  0x7001F1A6
 
 /*
+* Structures and Unions
+*/
+
+/*
+** This structure is used to store the interrupt, 
+** MTC, and VPE status during critical sections 
+*/
+typedef struct  
+{
+    UINT32 int_status;     /* used for storing/restoring interrupt status */
+    UINT32 mtc_status;     /* used for storing/restoring MTC status */
+    UINT32 vpe_status;     /* used for storing/restoring VPE status */
+} top_plat_lock_struct;
+
+/*
 ** Function prototypes
 */
 
 EXTERN PMCFW_ERROR top_device_id_override(UINT32* dev_id);
+PUBLIC void top_plat_critical_region_enter(top_plat_lock_struct * lock_struct_ptr);
+PUBLIC void top_plat_critical_region_exit(top_plat_lock_struct lock_struct);
 
 #endif /* _TOP_PLAT_H */
 /** @} end addtogroup */

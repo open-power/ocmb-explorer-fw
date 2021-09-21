@@ -19,11 +19,11 @@
 *     Generated register header file to be used by ocmb_config_guide.c.
 *     
 *     This file is generated from:
-*     ocmb_config_guide_v32.xlsx (ibm_v32)
+*     ocmb_config_guide_v34.xlsx (ibm_v34)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gocmb_config_guide_v32.xlsx -ribm_v32
-*     -pocmb_config_guide_v32.parsed -nnamespace_exp_p_a_release_047.tcl
+*     python ConfigGuideConv.py -gocmb_config_guide_v34.xlsx -ribm_v34
+*     -pocmb_config_guide_v34.parsed -nnamespace_exp_p_a_release_047.tcl
 *     -cocmb_config_guide.c -hocmb_config_guide.h -xConfigurations,DLx_Config
 *     -focmb_cfg -a -64bit
 * 
@@ -45,6 +45,7 @@
 /* Function Prototypes */
 
 EXTERN BOOL ocmb_cfg_exp_config(UINT32 ocmb_base_addr);
+EXTERN BOOL ocmb_cfg_DLx_train_wait_FW(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_x4LaneMode(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_Sensor_Cache_enable(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_DLx_config_FW(UINT32 ocmb_base_addr);

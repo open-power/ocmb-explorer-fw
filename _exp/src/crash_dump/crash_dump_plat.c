@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -52,13 +52,29 @@
 #include "fam.h"
 #include "fw_version_info.h"
 #include "flash_partition_info.h"
+#include "bc_printf.h"
+#include "char_io.h"
+#include "top_plat.h"
 
 /*
 * Local Constants
 */
 
-#define CRASH_DUMP_HEADER_SECTION_SIZE (4 * 1024)
-#define CRASH_DUMP_MAX_WRITE_SIZE (4 * 1024)
+/*
+** Size of the Crash Dump header section. 
+**  
+** Each header entry is of size sizeof(crash_dump_header).  The 
+** sizeof(crash_dump_header) is currently 64 bytes.  This means 
+** we can fit 16 header entries which is overprovisioned by a 
+** significant amount at this point.
+*/
+#define CRASH_DUMP_HEADER_SECTION_SIZE  (1*1024)
+
+/*
+** Maximum size of the buffer located in SRAM to hold the crash dump before
+** shipping it out to flash.
+*/
+#define CRASH_DUMP_MAX_WRITE_SIZE       (64 * 1024)
 
 /*
 * Local Macro Definitions
@@ -141,7 +157,7 @@ PRIVATE crash_dump_ram_buffer header_buffer;
 PRIVATE PMCFW_ERROR _crash_dump_write(UINT8* data_ptr, UINT32 data_size, UINT32 spi_dest_addr);
 typedef PMCFW_ERROR (*crash_dump_write_fn_ptr_type)(UINT8* data_ptr, UINT32 data_size, UINT32 spi_dest_addr);
 PRIVATE crash_dump_write_fn_ptr_type crash_dump_write_fn_ptr = _crash_dump_write;
-#define crash_dump_spi_write (*crash_dump_write_fn_ptr)
+#define crash_dump_write (*crash_dump_write_fn_ptr)
 
 /*
 * Public Variables
@@ -159,7 +175,7 @@ PRIVATE crash_dump_write_fn_ptr_type crash_dump_write_fn_ptr = _crash_dump_write
 *   Address in SPI flash where the crash dump is saved.
 *
 */
-PRIVATE UINT32 crash_dump_plat_crash_dump_spi_addr_get(void)
+PRIVATE UINT32 crash_dump_plat_active_crash_dump_spi_addr_get(void)
 {
     /* determine the active image to get the crash dump SPI start address */
     if (flash_partition_boot_partition_id_get() == 'A')
@@ -186,13 +202,40 @@ PRIVATE UINT32 crash_dump_plat_crash_dump_spi_addr_get(void)
 
 /**
 * @brief
-*   Get the size of SPI flash where the crash dump data should be stored
+*   Get the size of SPI flash partition for the crash dump
+*   specified by the crash dump address
+* 
+ * @param[in] cd_spi_addr - address of crash dump partition
+* 
+* @return
+ *  Size of SPI flash partition for the specified crash dump
+ *  address.
+*
+*/
+PRIVATE UINT32 crash_dump_plat_crash_dump_spi_size_get(UINT32 cd_spi_addr)
+{
+    if (SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_ADDR == cd_spi_addr)
+    {
+        /* request for size of Image A crash dump partition */
+        return (SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE);
+    }
+    else
+    {
+        /* request for size of Image B crash dump partition */
+        return (SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_SIZE);
+    }
+}
+
+/**
+* @brief
+*   Get the size of SPI flash where the active crash dump data
+*   should be stored
 *
 * @return
 *   Size of SPI flash where the crash dump is saved.
 *
 */
-PRIVATE UINT32 crash_dump_plat_crash_dump_spi_size_get(void)
+PRIVATE UINT32 crash_dump_plat_active_crash_dump_spi_size_get(void)
 {
     /* determine the active image to get the crash dump size */
     if (flash_partition_boot_partition_id_get() == 'A')
@@ -220,9 +263,6 @@ PRIVATE UINT32 crash_dump_plat_crash_dump_spi_size_get(void)
 PRIVATE VOID crash_dump_plat_add_spi_section(UINT32 start_address, UINT32 size)
 {
     crash_dump_spi_section *new_crash_section_ptr;
-
-    /* Make sure the start address is page aligned. */
-    PMCFW_ASSERT(((start_address)& 0xFFF) == 0, CRASH_DUMP_ERR_SPI_ALIGN);
 
     /* Allocate memory and fill in new entry for the linked list */
     new_crash_section_ptr = MEM_ALLOC(MEM_TYPE_FREE, sizeof(crash_dump_spi_section), 0);
@@ -333,11 +373,18 @@ PRIVATE PMCFW_ERROR crash_dump_spi_read(UINT8* dest_buffer_ptr, UINT32 data_size
 {
     PMCFW_ERROR rc = PMC_SUCCESS;
 
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_lock_struct lock_struct;
+    top_plat_critical_region_enter(&lock_struct);
+
     rc = spi_flash_read(SPI_FLASH_PORT,
                         SPI_FLASH_CS,
                         (UINT8*)((UINT32)spi_src_addr & GPBC_FLASH_PHYS_ADDR_MASK),
                         dest_buffer_ptr,
                         data_size);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct); 
 
     return rc;
 }
@@ -352,17 +399,17 @@ PRIVATE PMCFW_ERROR crash_dump_spi_read(UINT8* dest_buffer_ptr, UINT32 data_size
  *
  * @return
  *   PMC_SUCCESS if successful. Otherwise return error.
+ *  
+ * @note
+ *   Calls to this function should be wrapped with critical
+ *   section enter/exit 
  */
 PMC_RAM_PROGRAM
 PRIVATE PMCFW_ERROR _crash_dump_write(UINT8* data_ptr, UINT32 data_size, UINT32 spi_dest_addr)
 {
-    PMCFW_ERROR rc             = PMC_SUCCESS;
-    UINT32      spi_flash_addr = spi_dest_addr;
-
-    spi_flash_dev_info_struct dev_info;
-    spi_flash_dev_enum        dev;
-    UINT8*                    subsector_base;
-    UINT32                    subsector_len;
+    PMCFW_ERROR                 rc             = PMC_SUCCESS;
+    spi_flash_dev_info_struct   dev_info;
+    spi_flash_dev_enum          dev;
 
     PMCFW_ASSERT(data_size <= CRASH_DUMP_MAX_WRITE_SIZE, CRASH_DUMP_ERR_SPI_WRITE_TOO_LARGE);
 
@@ -373,41 +420,18 @@ PRIVATE PMCFW_ERROR _crash_dump_write(UINT8* data_ptr, UINT32 data_size, UINT32 
                                 &dev_info);
     if (PMC_SUCCESS != rc)
     {
-        return CRASH_DUMP_ERR_SPI_ERASE;
+        return CRASH_DUMP_ERR_SPI_DEV_INFO_GET_ERR;
     }
 
-    /* get the subsector address */
-    rc = spi_flash_subsector_params_get(SPI_FLASH_PORT,
-                                        SPI_FLASH_CS,
-                                        (UINT8*)(spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK),
-                                        &subsector_base,
-                                        &subsector_len);
-    if (PMC_SUCCESS != rc)
-    {
-        return CRASH_DUMP_ERR_SPI_ERASE;
-    }
+    /* Write the buffer into flash. */
+    rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                               SPI_FLASH_CS,
+                               (UINT8*)data_ptr,
+                               (UINT8*)(spi_dest_addr & GPBC_FLASH_PHYS_ADDR_MASK),
+                               data_size,
+                               dev_info.page_size,
+                               dev_info.max_time_page_prog);
 
-    /* erase subsector */
-    rc = spi_flash_subsector_erase(SPI_FLASH_PORT,
-                                   SPI_FLASH_CS,
-                                   subsector_base);
-    if (PMC_SUCCESS != rc)
-    {
-        return CRASH_DUMP_ERR_SPI_ERASE;
-    }
-
-    /* poll for erase completion */
-    rc = spi_plat_flash_poll_write_erase_complete(FALSE, dev_info.max_time_subsector_erase);
-    if (PMC_SUCCESS != rc)
-    {
-        return CRASH_DUMP_ERR_SPI_ERASE_TIMEOUT;
-    }
-
-    rc = spi_plat_flash_write_pages((UINT8*)data_ptr,
-                                    (UINT8*)(spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK),
-                                     data_size,
-                                     dev_info.page_size,
-                                     dev_info.max_time_page_prog);
     if (PMC_SUCCESS != rc)
     {
         return CRASH_DUMP_ERR_SPI_WRITE;
@@ -417,6 +441,34 @@ PRIVATE PMCFW_ERROR _crash_dump_write(UINT8* data_ptr, UINT32 data_size, UINT32 
 
 }
 PMC_END_RAM_PROGRAM
+
+
+/**
+* @brief 
+*   Erase the crash dump partition in flash.  The partition to
+*   erase is selected by the host server specifying either Image
+*   A or B.
+*
+* @param[in] cd_partition_addr - Base address of specified Crash
+*   Dump partition in flash.
+* 
+* @param[in] cd_partition_size - Size of the specified Crash
+*       Dump partition in flash.
+*
+* @return
+*   PMC_SUCCESS
+*   Error code if error
+*/
+PRIVATE PMCFW_ERROR crash_dump_erase(UINT32 cd_partition_addr, UINT32 cd_partition_size)
+{
+    /* 
+    ** use platform specific SPI flash function to erase the memory 
+    ** this function will accommodate for ECC and sub-sector erases that erases 
+    ** memory outside the specified base address and number of bytes and 
+    ** ensure that any SPI memory that is not meant to be erased is restored
+    */ 
+    return(spi_flash_plat_erase((UINT8*)cd_partition_addr, cd_partition_size));
+}
 
 /*
 * Public Functions
@@ -432,14 +484,14 @@ PMC_END_RAM_PROGRAM
 PUBLIC void crash_dump_plat_init(void)
 {
     /* Set the crash dump header address to be before the first SPI section */
-    spi_flash_header_address = crash_dump_plat_crash_dump_spi_addr_get();
+    spi_flash_header_address = crash_dump_plat_active_crash_dump_spi_addr_get();
 
     /*
     ** Add all the SPI sections used for crash dump. Add an offset of
     ** CRASH_DUMP_HEADER_SECTION_SIZE to accommodate the space required by the header.
     */
     crash_dump_plat_add_spi_section(spi_flash_header_address + CRASH_DUMP_HEADER_SECTION_SIZE,
-                                    crash_dump_plat_crash_dump_spi_size_get() - CRASH_DUMP_HEADER_SECTION_SIZE);
+                                    crash_dump_plat_active_crash_dump_spi_size_get() - CRASH_DUMP_HEADER_SECTION_SIZE);
 
     /* Initialize the write address to the start of the crash dump data section */
     spi_write_handler.current_spi_section = head_crash_dump_section;
@@ -447,7 +499,7 @@ PUBLIC void crash_dump_plat_init(void)
 
     /* Setup the RAM buffers for the crash dump header and data */
     crash_dump_header_buffer_set((UINT32) ech_ext_data_ptr_get(), CRASH_DUMP_HEADER_SECTION_SIZE);
-    crash_dump_data_buffer_set((UINT32) ech_ext_data_ptr_get() + CRASH_DUMP_HEADER_SECTION_SIZE, CRASH_DUMP_MAX_WRITE_SIZE);
+    crash_dump_data_buffer_set((UINT32) ech_ext_data_ptr_get() + CRASH_DUMP_HEADER_SECTION_SIZE, ech_ext_data_size_get() - CRASH_DUMP_HEADER_SECTION_SIZE);
 }
 
 
@@ -511,7 +563,7 @@ PUBLIC UINT32 crash_dump_plat_remaining_spi_space_get(void)
 
 /**
  * @brief
- *   Append crash dump header to SPI
+ *   Append crash dump header to RAM buffer
  *
  * @param[in] crash_dump_header_ptr - Pointer to crash dump header
  *
@@ -526,7 +578,7 @@ PUBLIC PMCFW_ERROR crash_dump_plat_header_put(crash_dump_header *crash_dump_head
         return CRASH_DUMP_HEADER_TOO_LARGE;
     }
 
-    /* Copy to header RAM buffer */
+    /* append header to RAM buffer */
     memcpy(header_buffer.write_ptr, crash_dump_header_ptr, sizeof(crash_dump_header));
     header_buffer.write_ptr += sizeof(crash_dump_header);
 
@@ -560,40 +612,14 @@ PUBLIC PMCFW_ERROR crash_dump_plat_data_put(UINT32 buffer_size, void *src_buffer
     }
     else
     {
-        UINT32 remaining_ram_buffer_space = (UINT32) data_buffer.end_ptr - (UINT32) data_buffer.write_ptr;
-        UINT32 remaining_input_data = buffer_size - remaining_ram_buffer_space;
-        void*  remaining_src_buffer_ptr = (void*)((UINT32)src_buffer_ptr + remaining_ram_buffer_space);
-
-        /* Copy the number of bytes from the source buffer to fill the RAM data buffer */
-        memcpy(data_buffer.write_ptr, src_buffer_ptr, remaining_ram_buffer_space);
-
-        do
-        {
-            /* Write to SPI flash */
-            rc = crash_dump_spi_write(data_buffer.start_ptr, (UINT32)data_buffer.end_ptr - (UINT32)data_buffer.start_ptr, spi_write_handler.current_spi_address);
-
-            if (rc != PMC_SUCCESS)
-            {
-                return rc;
-            }
-
-            rc = spi_flash_address_update(&spi_write_handler, CRASH_DUMP_MAX_WRITE_SIZE);
-
-            if (rc != PMC_SUCCESS)
-            {
-                return rc;
-            }
-
-            /* Reset and clear data buffer write pointer */
-            data_buffer.write_ptr = data_buffer.start_ptr;
-            memset(data_buffer.start_ptr, 0, (UINT32)data_buffer.end_ptr - (UINT32)data_buffer.start_ptr);
-
-            /* Fill with remaining data */
-            memcpy(data_buffer.write_ptr, remaining_src_buffer_ptr, min(CRASH_DUMP_MAX_WRITE_SIZE, remaining_input_data));
-            data_buffer.write_ptr += min(CRASH_DUMP_MAX_WRITE_SIZE, remaining_input_data);
-            remaining_input_data -=  min(CRASH_DUMP_MAX_WRITE_SIZE, remaining_input_data);
-
-        } while (remaining_input_data > 0);
+        /*
+        ** The SRAM CD holding buffer should never overflow.  If it does,
+        ** then this is a design issue that needs to be resolved.  See the 
+        ** comment at the head of crash_dump.c for an explanation. 
+        */
+        bc_printf_channel_set(CHAR_IO_CHANNEL_ID_RUNTIME);
+        bc_printf("[%s] ERROR: Crash Dump RAM Holding buffer overflow...\n", __FUNCTION__);
+        PMCFW_ASSERT(FALSE, PMCFW_ERR_FAIL);
     }
 
     return rc;
@@ -608,20 +634,56 @@ PUBLIC PMCFW_ERROR crash_dump_plat_data_put(UINT32 buffer_size, void *src_buffer
  */
 PUBLIC PMCFW_ERROR crash_dump_plat_header_flush(void)
 {
-    return crash_dump_spi_write(header_buffer.start_ptr, CRASH_DUMP_HEADER_SECTION_SIZE, spi_flash_header_address);
+    PMCFW_ERROR rc = PMC_SUCCESS;
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_lock_struct lock_struct;
+    top_plat_critical_region_enter(&lock_struct);
+
+    rc = crash_dump_write(header_buffer.start_ptr,
+                          CRASH_DUMP_HEADER_SECTION_SIZE, 
+                          spi_flash_header_address);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
+
+    return rc;
 }
 
 
 /**
  * @brief
  *   Send all the contents in the data RAM buffer to SPI flash
- *
+ *  
+ * @param[in] data_size - The amount of data, in bytes, to flush 
+ *       to flash.
+ *  
+ * @param[in] flash_offset - The offset into the flash partition 
+ *       allocated for the crash dump.
+ *  
  * @return
  *   PMC_SUCCESS if successful. Otherwise return error.
  */
-PUBLIC PMCFW_ERROR crash_dump_plat_data_flush(void)
+PUBLIC PMCFW_ERROR crash_dump_plat_data_flush(UINT32 data_size, UINT32 flash_offset)
 {
-    return crash_dump_spi_write(data_buffer.start_ptr, CRASH_DUMP_MAX_WRITE_SIZE, spi_write_handler.current_spi_address);
+    PMCFW_ERROR rc = PMC_SUCCESS;
+
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_lock_struct lock_struct;
+    top_plat_critical_region_enter(&lock_struct);
+
+    /*
+    ** The crash dump is only CRASH_DUMP_MAX_WRITE_SIZE, but with CRASH_DUMP_HEADER_SECTION_SIZE bytes
+    ** used for the header.  Flush out only to the data section.
+    */
+    rc = crash_dump_write(data_buffer.start_ptr,
+                          data_size, 
+                          spi_write_handler.current_spi_address + flash_offset);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
+
+    return rc;
 }
 
 /**
@@ -636,19 +698,13 @@ PUBLIC PMCFW_ERROR crash_dump_plat_data_flush(void)
  */
 PUBLIC PMCFW_ERROR crash_dump_plat_header_entry_get(UINT32 header_index, crash_dump_header *crash_dump_header_ptr)
 {
-    PMCFW_ERROR rc = PMC_SUCCESS;
+    PMCFW_ERROR         rc = PMC_SUCCESS;
+    crash_dump_header   *header_flash_ptr = (crash_dump_header *)spi_flash_header_address;
 
     memset(crash_dump_header_ptr, 0, sizeof(crash_dump_header));
 
     /* Read the header page from SPI flash into the buffer */
-    rc = crash_dump_spi_read((void*) crash_dump_header_ptr,
-                             sizeof(crash_dump_header),
-                             spi_flash_header_address + (sizeof(crash_dump_header) * header_index));
-
-    if (rc != PMC_SUCCESS)
-    {
-        return rc;
-    }
+    memcpy(crash_dump_header_ptr, &header_flash_ptr[header_index], sizeof(crash_dump_header));
 
     if (crash_dump_header_ptr->header_key != CRASH_DUMP_HEADER_KEY)
     {
@@ -699,81 +755,26 @@ PUBLIC UINT32 crash_dump_plat_raw_header_get(UINT8* dest_buffer, UINT32 dest_buf
  *   Gets a single crash dump section given a crash_dump_header
  *
  * @param[in] crash_dump_header_ptr - Pointer to the data for the crash dump section to return
- * @param[in] crash_dump_offset - Offset into the crash dump section to return
  * @param[in] dest_buffer - Destination buffer to copy data from the crash dump section
  * @param[in] dest_buffer_size - Size of destination buffer.
  *
  * @return
  *   PMC_SUCCESS if successful. Otherwise return error.
  */
-PUBLIC PMCFW_ERROR crash_dump_plat_data_section_get(crash_dump_header *crash_dump_header_ptr, UINT32 crash_dump_offset, UINT8 *dest_buffer, UINT32 dest_buffer_size)
+PUBLIC PMCFW_ERROR crash_dump_plat_data_section_get(crash_dump_header *crash_dump_header_ptr, 
+                                                    UINT8 *dest_buffer, 
+                                                    UINT32 dest_buffer_size)
 {
-    crash_dump_spi_section *current_section = head_crash_dump_section;
-    UINT32 read_offset = crash_dump_header_ptr->start_offset + crash_dump_offset;
-    UINT32 spi_read_address = current_section->start_addr;
-    UINT8 *dest_buffer_write_ptr;
-    UINT32 remaining_data;
+    UINT8   *flash_rd_ptr;
+    UINT32  cd_data_section_flash_base_addr;
 
-    if (crash_dump_header_ptr->size < crash_dump_offset)
-    {
-        /* Offset is larger than the section attempting to read from do nothing and return */
-        return PMC_SUCCESS;
-    }
+    PMCFW_ASSERT(crash_dump_header_ptr->size < dest_buffer_size, CRASH_DUMP_ERR_GET_SPI_OVERFLOW)
 
-    /* Find the start SPI address for the crash dump section */
-    while (read_offset != 0)
-    {
-        if (read_offset > current_section->size)
-        {
-            read_offset -= current_section->size;
+    cd_data_section_flash_base_addr = spi_flash_header_address + CRASH_DUMP_HEADER_SECTION_SIZE;
 
-            if (current_section->next_section_ptr == NULL)
-            {
-                /* This should never happen. Something must have been corrupted */
-                return CRASH_DUMP_ERR_GET_OFFSET_TOO_LARGE;
-            }
-            else
-            {
-                current_section = current_section->next_section_ptr;
-            }
-        }
-        else
-        {
-            spi_read_address = current_section->start_addr + read_offset;
-            read_offset = 0;
-            break;
-        }
-    }
-
-    /* Try to copy the entire crash dump section or as much as the destination buffer will hold */
-    dest_buffer_write_ptr = dest_buffer;
-    remaining_data = min((crash_dump_header_ptr->size - crash_dump_offset), dest_buffer_size);
-    while (current_section != NULL)
-    {
-        UINT32 remaining_spi_section_space = (current_section->start_addr + current_section->size) - spi_read_address;
-        if (remaining_data <= remaining_spi_section_space)
-        {
-            crash_dump_spi_read(dest_buffer_write_ptr, remaining_data, spi_read_address);
-            return PMC_SUCCESS;
-        }
-        else
-        {
-            crash_dump_spi_read(dest_buffer_write_ptr, remaining_spi_section_space, spi_read_address);
-
-            if (current_section->next_section_ptr == NULL)
-            {
-                /* Should never happen */
-                break;
-            }
-
-            current_section = current_section->next_section_ptr;
-            spi_read_address = current_section->start_addr;
-            remaining_data -= remaining_spi_section_space;
-            dest_buffer_write_ptr += remaining_spi_section_space;
-        }
-    }
-
-    return CRASH_DUMP_ERR_GET_SPI_OVERFLOW;
+    flash_rd_ptr = (UINT8 *)(cd_data_section_flash_base_addr + crash_dump_header_ptr->start_offset);
+    memcpy(dest_buffer, flash_rd_ptr, crash_dump_header_ptr->size);
+    return PMC_SUCCESS;
 }
 
 /**
@@ -848,6 +849,194 @@ PUBLIC UINT32 crash_dump_plat_raw_data_get(UINT8* dest_buffer, UINT32 dest_buffe
 PUBLIC VOID crash_dump_plat_ram_code_ptr_adjust(UINT32 offset)
 {
     crash_dump_write_fn_ptr = (crash_dump_write_fn_ptr_type)((UINT32)crash_dump_write_fn_ptr - offset);
+}
+
+/**
+* @brief
+*   Erase the Crash Dump Partition for the FW image that
+*   Explorer is currently running.
+*
+* @param
+*
+* @return
+*   PMC_SUCCESS or Error code.
+*/
+PUBLIC PMCFW_ERROR crash_dump_plat_active_partition_erase(void)
+{
+    return(crash_dump_erase(crash_dump_plat_active_crash_dump_spi_addr_get(), crash_dump_plat_active_crash_dump_spi_size_get()));
+}
+
+/**
+* @brief
+*   Zero fill the specified crash dump partition.
+*
+* @param[in] - cd_spi_addr
+*
+* @return
+*   PMC_SUCCESS or Error code.
+*/
+PUBLIC PMCFW_ERROR crash_dump_plat_partition_zero_fill(UINT32 cd_spi_addr)
+{
+    PMCFW_ERROR rc = PMC_SUCCESS;
+    UINT8       *tmp_buf_ptr = ech_ext_data_ptr_get();
+    UINT32      cd_size = crash_dump_plat_crash_dump_spi_size_get(cd_spi_addr);
+
+    /* erase the entire crash dump area in flash */
+    crash_dump_erase(cd_spi_addr, cd_size);
+
+    /* 
+    ** zero-fill the crash dump partition 
+    ** each crash dump partition for Image A and B are 256 KB 
+    ** zero-fill in 64 KB blocks
+    */
+    memset(tmp_buf_ptr, 0x0, CRASH_DUMP_MAX_WRITE_SIZE);
+    for (UINT32 i = 0; i < cd_size; i += CRASH_DUMP_MAX_WRITE_SIZE)
+    {
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_lock_struct lock_struct;
+        top_plat_critical_region_enter(&lock_struct);
+
+        rc = crash_dump_write(tmp_buf_ptr,
+                              CRASH_DUMP_MAX_WRITE_SIZE, 
+                              (cd_spi_addr + i));
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
+
+        if (PMC_SUCCESS != rc)
+        {
+            /* spi write failed */
+            break;
+        }
+    }
+
+    return(rc);
+}
+
+/**
+* @brief
+*   Pad out the crash dump so the entire partition is written
+*   and no ECC errors will occur when the partition is read
+*   back.
+*
+* @param[in] flash_offset - starting offset in CD partition to
+*       begin padding fill
+*
+* @return
+*   PMC_SUCCESS or Error code.
+*/
+PUBLIC PMCFW_ERROR crash_dump_plat_partition_pad_fill(UINT32 flash_offset)
+{
+    PMCFW_ERROR rc = PMC_SUCCESS;
+    UINT8       *tmp_buf_ptr = ech_ext_data_ptr_get();
+    UINT32      bytes_to_fill = crash_dump_plat_active_crash_dump_spi_size_get() - CRASH_DUMP_HEADER_SECTION_SIZE;
+    UINT32      fill_bytes_num;
+
+    /* 
+    ** zero-fill the unwritten crash dump partition, 
+    ** use 64KB extended buffer as source data buffer 
+    */
+    memset(tmp_buf_ptr, 0x0, CRASH_DUMP_MAX_WRITE_SIZE);
+    for ( ; flash_offset < bytes_to_fill; flash_offset += CRASH_DUMP_MAX_WRITE_SIZE)
+    {
+        /* determine the number of bytes to program */
+        if ((flash_offset + CRASH_DUMP_MAX_WRITE_SIZE) > bytes_to_fill)
+        {
+            fill_bytes_num = bytes_to_fill - flash_offset;
+        }
+        else
+        {
+            fill_bytes_num = CRASH_DUMP_MAX_WRITE_SIZE;
+        }
+
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_lock_struct lock_struct;
+        top_plat_critical_region_enter(&lock_struct);
+
+        rc = crash_dump_write(tmp_buf_ptr,
+                              fill_bytes_num, 
+                              spi_write_handler.current_spi_address + flash_offset);
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
+
+        if (PMC_SUCCESS != rc)
+        {
+            /* spi write failed */
+            break;
+        }
+    }
+
+    return(rc);
+}
+
+/**
+* @brief
+*   Get the write pointer to the Crash Dump holding buffer in
+*   SRAM.  The FW fills this holding buffer and then ships it
+*   all out to flash at one time.
+*
+* @return
+*   Write pointer to the Crash Dump holding buffer.
+*/
+PUBLIC UINT8 *crash_dump_plat_ram_buf_wr_ptr_get(void)
+{
+    return (data_buffer.write_ptr);
+}
+
+/**
+* @brief
+*   Update the write pointer to the Crash Dump holding buffer.
+*
+* @param[in] update_size - The number of bytes to update the
+*       write pointer with.
+*
+* @return
+*   None
+*/
+PUBLIC void crash_dump_plat_ram_buf_wr_ptr_update(UINT32 update_size)
+{
+    data_buffer.write_ptr += update_size;
+}
+
+/**
+* @brief
+*   Read the contents of the specified crash dump partition into
+*   the specified destination buffer.  This includes both the
+*   header and data sections of the crash dump partition.
+*
+* @param[out] dst_ptr - Pointer to the buffer to read the
+*       contents of the crash dump partition into.
+* @param[in] spi_src_addr - Address of the crash dump partition
+*       to read.
+* @param[in] len - The number of bytes to read.
+*
+* @return
+*   None
+*/
+PUBLIC void crash_dump_plat_full_read(UINT8 *dst_ptr, UINT32 spi_src_addr, UINT32 len)
+{
+    crash_dump_spi_read(dst_ptr, len, spi_src_addr);
+}
+
+
+/**
+* @brief
+*   Reset the pointers into the SRAM buffer used to hold the
+*   crash dump data before it gets shipped to flash.  This
+*   function also pre-fills the buffer.
+*  
+* @return
+*   None
+*/
+PUBLIC void crash_dump_plat_ram_buf_ptr_reset(void)
+{
+    data_buffer.write_ptr = data_buffer.start_ptr;
+
+    /*
+    ** Pre-fill with 0xFF because this is the erase data for flash.
+    */
+    memset(data_buffer.start_ptr, 0xFF, data_buffer.end_ptr - data_buffer.start_ptr);
 }
 
 /** @} end addtogroup */

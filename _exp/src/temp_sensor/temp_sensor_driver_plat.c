@@ -35,8 +35,8 @@
 #include "app_fw.h"
 #include "temp_sensor_plat.h"
 #include "temp_sensor_driver_plat.h"
-
 #include "twi_api.h"
+#include "pmc_profile.h"
 
 
 /*
@@ -51,15 +51,6 @@
 #define TWI_SWITCH_SLV_ADDR     (0xEA >> 1)
 #define TWI_TEMP_SLV_ADDR       (0x98 >> 1)
 
-/* TWI switch channels for the PCA9548ABS */
-#define TWI_SWITCH_CHANNEL_ID_0 0
-#define TWI_SWITCH_CHANNEL_ID_1 1
-#define TWI_SWITCH_CHANNEL_ID_2 2
-#define TWI_SWITCH_CHANNEL_ID_3 3
-#define TWI_SWITCH_CHANNEL_ID_4 4
-#define TWI_SWITCH_CHANNEL_ID_5 5
-#define TWI_SWITCH_CHANNEL_ID_6 6
-#define TWI_SWITCH_CHANNEL_ID_7 7
 
 /*
 ** Local Structures and Unions
@@ -97,7 +88,7 @@ PRIVATE twi_slave_struct twi_switch = {
 *   PMC_SUCCESS or error code.
 *
 */
-PRIVATE PMCFW_ERROR temp_sensor_driver_twi_expander_enable(UINT32 twi_expander_channel)
+PUBLIC PMCFW_ERROR temp_sensor_driver_twi_expander_enable(UINT32 twi_expander_channel)
 {
     UINT8 twi_switch_control_reg;
     PMCFW_ERROR rc = PMC_SUCCESS;
@@ -128,29 +119,45 @@ PRIVATE PMCFW_ERROR temp_sensor_driver_twi_expander_enable(UINT32 twi_expander_c
     return rc;
 }
 
+/**
+* @brief
+*   Disable a channel on the TWI expander
+*
+* @param[in] twi_expander_channel - Channel to disable
+
+* @return
+*   PMC_SUCCESS or error code.
+*
+*/
+PUBLIC PMCFW_ERROR temp_sensor_driver_twi_expander_disable(UINT32 twi_expander_channel)
+{
+    UINT8 twi_switch_control_reg;
+    PMCFW_ERROR rc = PMC_SUCCESS;
+
+    if (twi_expander_channel > TWI_SWITCH_CHANNEL_ID_7)
+    {
+        return TEMP_ERR_SWITCH_CHANNEL_ID_INVALID;
+    }
+
+    /* Read the control register */
+    rc = twi_mst_rx(&twi_switch, &twi_switch_control_reg, sizeof(twi_switch_control_reg), TRUE);
+
+    if (rc != PMC_SUCCESS)
+    {
+        return rc;
+    }
+
+    /* Write the control register */
+    twi_switch_control_reg &= ~(1 << twi_expander_channel);
+
+    rc = twi_mst_tx(&twi_switch, &twi_switch_control_reg, sizeof(twi_switch_control_reg), TRUE);
+
+    return rc;
+}
+
 /*
 ** Public Functions
 */
-
-/**
-* @brief
-*   MC1412-1-ACZL Temperature Sensor Driver Platform initialization 
-*
-* @param
-*   None
-* @return
-*   None.
-*
-*/
-PUBLIC VOID temp_sensor_driver_plat_init(VOID)
-{
-    /* Enable the TWI expander for the onboard temperature sensors */
-    temp_sensor_driver_twi_expander_enable(TWI_SWITCH_CHANNEL_ID_2);
-    temp_sensor_driver_twi_expander_enable(TWI_SWITCH_CHANNEL_ID_3);
-
-    /* Enable the TWI expander for the onchip temperature sensor */
-    temp_sensor_driver_twi_expander_enable(TWI_SWITCH_CHANNEL_ID_4);
-}
 
 /**
  * @brief

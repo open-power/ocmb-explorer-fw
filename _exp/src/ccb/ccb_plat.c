@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved.
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved.
 *
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not
 * use this file except in compliance with the License. You may obtain a copy of
@@ -32,6 +32,7 @@
 #include "ccb_api.h"
 #include "char_io.h"
 #include "crash_dump.h"
+#include "crash_dump_plat.h"
 
 /*
 * Local Enumerated Types
@@ -74,11 +75,20 @@ void ccb_plat_runtime_crash_dump(void)
     UINT32 size;
     void *ccb_ctrl_ptr;
     void *addr_ptr;
+    UINT8 *cd_ram_ptr;
 
+    /* Get CCB info. */
     ccb_ctrl_ptr = char_io_ccb_ctrl_get(CHAR_IO_CHANNEL_ID_RUNTIME);
     size = ccb_info_get(ccb_ctrl_ptr, &addr_ptr);
 
-    crash_dump_put(size, addr_ptr);
+    /* Get write pointer to the crash dump holding buffer in SRAM. */
+    cd_ram_ptr = crash_dump_plat_ram_buf_wr_ptr_get();
+
+    /* Get the unwrapped contents on the CCB.*/
+    ccb_get(ccb_ctrl_ptr, (CHAR *)cd_ram_ptr, size);
+
+    /* Update the write point to the crash dump holding buffer. */
+    crash_dump_plat_ram_buf_wr_ptr_update(size);
 }
 
 /* End of File */

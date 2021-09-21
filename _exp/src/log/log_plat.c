@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2021 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -36,6 +36,9 @@
 #include "char_io.h"
 #include "ccb_api.h"
 #include "spi_plat.h"
+#include "spi_flash_api.h"
+#include "crash_dump_plat.h"
+#include "top_plat.h"
 
 /*
 ** Local Enumerated Types
@@ -116,6 +119,7 @@ PRIVATE PMCFW_ERROR _log_spi_flash_partition_erase(UINT8* spi_flash_addr,
     UINT32 subsector_len;
     UINT8* erase_addr = (UINT8*)((UINT32)spi_flash_addr & GPBC_FLASH_PHYS_ADDR_MASK);
     PMCFW_ERROR rc;
+    top_plat_lock_struct lock_struct;
 
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
@@ -127,9 +131,6 @@ PRIVATE PMCFW_ERROR _log_spi_flash_partition_erase(UINT8* spi_flash_addr,
     {
         return (rc);
     }
-
-    /* halt other VPE so SPI flash can be erased without crashing other VPE */
-    hal_disable_mvpe();
 
     /* erase subsectors until the SPI flash log partition is erased */
     for (UINT32 i = 0; i < num_bytes; i += subsector_len)
@@ -152,17 +153,28 @@ PRIVATE PMCFW_ERROR _log_spi_flash_partition_erase(UINT8* spi_flash_addr,
             return (SPI_FLASH_ERR_BAD_PARAM);
         }
 
+        /* disable interrupts and disable multi-VPE operation */
+        top_plat_critical_region_enter(&lock_struct);
+
         rc = spi_flash_subsector_erase(SPI_FLASH_PORT,
                                        SPI_FLASH_CS,
                                        subsector_base);
+
+        /* restore interrupts and enable multi-VPE operation */
+        top_plat_critical_region_exit(lock_struct);
 
         if (PMC_SUCCESS != rc)
         {
             return (rc);
         }
 
+        top_plat_critical_region_enter(&lock_struct);
+
         /* poll for erase completion */
         rc = spi_plat_flash_poll_write_erase_complete(FALSE, dev_info.max_time_subsector_erase);
+
+        top_plat_critical_region_exit(lock_struct);
+
         if (rc != PMC_SUCCESS)
         {
             return (rc);
@@ -171,9 +183,6 @@ PRIVATE PMCFW_ERROR _log_spi_flash_partition_erase(UINT8* spi_flash_addr,
         /* increment the erase subsector address by the length of the subsector */
         erase_addr = (UINT8*)((UINT32)subsector_base + subsector_len);
     }
-
-    /* resume other VPE */
-    hal_enable_mvpe();
 
     /* return success */
     return (PMC_SUCCESS);
@@ -213,7 +222,7 @@ PRIVATE VOID log_ram_read()
         /* prepare response parameters */
         rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
         rsp_parms_ptr->status = EXP_FW_API_FAILURE;
-        rsp_parms_ptr->err_code = EXP_FW_LOG_OP_NO_ACTIVE_LOG;
+        rsp_parms_ptr->err_code = LOG_OP_NO_ACTIVE_LOG;
         rsp_parms_ptr->num_bytes_returned = 0;
     }
     else
@@ -228,7 +237,7 @@ PRIVATE VOID log_ram_read()
 
         /* set response parameters */
         rsp_parms_ptr->status = EXP_FW_API_SUCCESS;
-        rsp_parms_ptr->err_code = EXP_SUCCESS;
+        rsp_parms_ptr->err_code = LOG_OP_SUCCESS;
         rsp_parms_ptr->num_bytes_returned = ccb_log_size;
 
         /* set the extended data response length */
@@ -281,13 +290,29 @@ PRIVATE VOID log_saved_read()
         src_data_ptr = (UINT8*)SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_ADDR;
     }
 
-    if (cmd_parms_ptr->offset > SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE)
+    /* determine if there's any data in the log */          
+    if (CRASH_DUMP_HEADER_KEY != *(UINT32*)src_data_ptr)
+    {
+        /* log is empty */
+
+        /* set response parameters */
+        rsp_parms_ptr->status = EXP_FW_API_FAILURE;
+        rsp_parms_ptr->err_code = LOG_OP_NO_SAVED_LOG;
+        rsp_parms_ptr->num_bytes_returned = 0;
+
+        /* set the extended data response length */
+        rsp_ptr->ext_data_len = 0;
+
+        /* set the extended data flag */
+        rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
+    }
+    else if (cmd_parms_ptr->offset > SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_SIZE)
     {
         /* offset beyond end of logfile, invalid address request */
 
         /* set failure status */
         rsp_parms_ptr->status = EXP_FW_API_FAILURE;
-        rsp_parms_ptr->err_code = EXP_INVALID_ADDR;
+        rsp_parms_ptr->err_code = LOG_OP_INVALID_ADDR;
         rsp_parms_ptr->num_bytes_returned = 0;
 
         /* set the extended data response length */
@@ -302,7 +327,7 @@ PRIVATE VOID log_saved_read()
 
         /* set failure status */
         rsp_parms_ptr->status = EXP_FW_API_FAILURE;
-        rsp_parms_ptr->err_code = EXP_INVALID_DATA_LENGTH;
+        rsp_parms_ptr->err_code = LOG_OP_INVALID_DATA_LEN;
         rsp_parms_ptr->num_bytes_returned = 0;
 
         /* set the extended data response length */
@@ -318,14 +343,14 @@ PRIVATE VOID log_saved_read()
                0x00,
                cmd_parms_ptr->num_bytes);
 
-        /* copy SPI crash dump logfile data to extended data buffer */
-        memcpy(ext_data_ptr, 
-               (src_data_ptr + cmd_parms_ptr->offset), 
-               cmd_parms_ptr->num_bytes);
+        /* copy SPI crash dump logfile data from flash to extended data buffer */
+        crash_dump_plat_full_read(ext_data_ptr, 
+                                  (UINT32)(src_data_ptr + cmd_parms_ptr->offset),
+                                  cmd_parms_ptr->num_bytes);
 
         /* set response parameters */
         rsp_parms_ptr->status = EXP_FW_API_SUCCESS;
-        rsp_parms_ptr->err_code = EXP_SUCCESS;
+        rsp_parms_ptr->err_code = LOG_OP_SUCCESS;
         rsp_parms_ptr->num_bytes_returned = cmd_parms_ptr->num_bytes;
 
         /* set the extended data response length */
@@ -374,7 +399,7 @@ PRIVATE VOID log_ram_erase(VOID)
         rsp_parms_ptr->status = EXP_FW_API_FAILURE;
 
         /* set err code */
-        rsp_parms_ptr->err_code = EXP_FW_LOG_OP_NO_ACTIVE_LOG;
+        rsp_parms_ptr->err_code = LOG_OP_NO_ACTIVE_LOG;
     }
     else
     {
@@ -385,7 +410,7 @@ PRIVATE VOID log_ram_erase(VOID)
         rsp_parms_ptr->status = EXP_FW_API_SUCCESS;
 
         /* set err code */
-        rsp_parms_ptr->err_code = EXP_SUCCESS;
+        rsp_parms_ptr->err_code = LOG_OP_SUCCESS;
     }
 
     /* set the response operand, same as the command operand */
@@ -398,6 +423,82 @@ PRIVATE VOID log_ram_erase(VOID)
     ech_oc_rsp_proc();
 
 } /* log_ram_erase */
+
+/**
+* @brief
+*   Erase the crash dump log file saved in flash.
+*
+* @return
+*   Nothing
+*
+* @note
+*/
+PRIVATE VOID log_saved_erase(VOID)
+{
+    exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();
+    exp_rsp_struct* rsp_ptr = ech_rsp_ptr_get();
+    exp_fw_log_cmd_parms_struct* cmd_parms_ptr = (exp_fw_log_cmd_parms_struct*)&cmd_ptr->parms;
+    exp_fw_log_rsp_parms_struct* rsp_parms_ptr = (exp_fw_log_rsp_parms_struct*)&rsp_ptr->parms;
+    UINT32 cd_spi_addr;
+    PMCFW_ERROR rc;
+
+    /* determine the active image to get the crash dump SPI start address */
+    if (cmd_parms_ptr->image == EXP_FW_IMAGE_A)
+    {
+        /* erase request for image A crash dump logfile */
+        bc_printf("Erasing crash dump log for Image A ... ");
+
+        /* get reference to image A SPI flash crash dump logfile */
+        cd_spi_addr = SPI_FLASH_FW_IMG_A_CFG_LOG_CRASH_DUMP_ADDR;
+    }
+    else
+    {
+        /* erase request for image B crash dump logfile */
+        bc_printf("Erasing crash dump log for Image B ... ");
+
+        /* get reference to image B SPI flash crash dump logfile */
+        cd_spi_addr = SPI_FLASH_FW_IMG_B_CFG_LOG_CRASH_DUMP_ADDR;
+    }
+
+    /*
+    ** Zero fill the crash dump partition to prevent SPI ECC errors 
+    ** if there is a subsequent read and no new crash dump.  The erase by 
+    ** itself fills the crash dump with 0xFF and, therefore, uninitialized ECC words. 
+    ** Subsequent reads would trigger ECC errors due to the uninitialized ECC words.
+    */
+    rc = crash_dump_plat_partition_zero_fill(cd_spi_addr);
+
+    if (PMC_SUCCESS != rc)
+    {
+        bc_printf("failed\n");
+
+        /* set failure status */
+        rsp_parms_ptr->status = EXP_FW_API_FAILURE;
+
+        /* set err code */
+        rsp_parms_ptr->err_code = rc;
+    }
+    else
+    {
+        bc_printf("passed\n");
+
+        /* set success status */
+        rsp_parms_ptr->status = EXP_FW_API_SUCCESS;
+
+        /* set err code */
+        rsp_parms_ptr->err_code = LOG_OP_SUCCESS;
+    }
+
+    /* set the response operand, same as the command operand */
+    rsp_parms_ptr->op = cmd_parms_ptr->op;
+
+    /* set the extended data flag */
+    rsp_ptr->flags = EXP_FW_NO_EXTENDED_DATA;
+
+    /* send the response */
+    ech_oc_rsp_proc();
+
+}
 
 /**
 * @brief
@@ -425,7 +526,10 @@ PRIVATE VOID log_cmd_process(VOID)
         case EXP_FW_LOG_OP_ACTIVE_CLR:
         {
             /* request to erase RAM log */
+            top_plat_lock_struct lock_struct;
+            top_plat_critical_region_enter(&lock_struct);
             log_ram_erase();
+            top_plat_critical_region_exit(lock_struct);
         }
         break;
 
@@ -437,12 +541,19 @@ PRIVATE VOID log_cmd_process(VOID)
         break;
 
         case EXP_FW_LOG_OP_SAVED_CLR:
+        {
+            /* request to erase saved crash dump logfile */
+            log_saved_erase();
+        }
+        break;
+
         default:
         {
             exp_rsp_struct* rsp_ptr = ech_rsp_ptr_get();
             exp_fw_log_rsp_parms_struct* rsp_parms_ptr = (exp_fw_log_rsp_parms_struct*)&rsp_ptr->parms;
 
             /* set the response parameters */
+            rsp_parms_ptr->op = cmd_parms_ptr->op;
             rsp_parms_ptr->status = EXP_FW_API_FAILURE;
             rsp_parms_ptr->err_code = PMCFW_ERR_INVALID_PARAMETERS;
             rsp_parms_ptr->num_bytes_returned = 0;
@@ -522,6 +633,7 @@ PUBLIC PMCFW_ERROR log_spi_flash_store(VOID)
     spi_flash_dev_enum dev;
     spi_flash_dev_info_struct dev_info;
     UINT8* spi_log_ptr;
+    top_plat_lock_struct lock_struct;
 
     /* get reference to the firmware log */
     log_app_info_get((VOID*)&log_mem_ptr);
@@ -559,7 +671,6 @@ PUBLIC PMCFW_ERROR log_spi_flash_store(VOID)
         /* log partition erase failed */
         return (rc);
     }
-
     /* get SPI flash device info */
     rc = spi_flash_dev_info_get(SPI_FLASH_PORT,
                                 SPI_FLASH_CS,
@@ -572,12 +683,20 @@ PUBLIC PMCFW_ERROR log_spi_flash_store(VOID)
         return (rc);
     }
 
+    /* disable interrupts and disable multi-VPE operation */
+    top_plat_critical_region_enter(&lock_struct);
+
     /* write the log one page at a time */
-    rc = spi_plat_flash_write_pages(log_mem_ptr,
-                                    spi_log_ptr,
-                                    log_size,
-                                    dev_info.page_size,
-                                    dev_info.max_time_page_prog);
+    rc = spi_flash_write_pages(SPI_FLASH_PORT,
+                               SPI_FLASH_CS,
+                               log_mem_ptr,
+                               spi_log_ptr,
+                               log_size,
+                               dev_info.page_size,
+                               dev_info.max_time_page_prog);
+
+    /* restore interrupts and enable multi-VPE operation */
+    top_plat_critical_region_exit(lock_struct);
 
     if (PMC_SUCCESS != rc)
     {

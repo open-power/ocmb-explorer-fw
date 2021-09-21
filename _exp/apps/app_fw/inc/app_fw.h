@@ -119,6 +119,8 @@
 ** Global variables
 */
 EXTERN volatile BOOL app_fw_oc_ready;
+EXTERN volatile UINT32 g_boot_timestamp;
+
 /*
 ** Function Prototypes
 */
