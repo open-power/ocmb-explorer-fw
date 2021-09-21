@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -47,6 +47,10 @@
 #include <string.h>
 #include "serdes_plat.h"
 #include "pmc_plat.h"
+#include "ech_twi_common.h"
+#include "ocmb_plat.h"
+#include "ocmb.h"
+
 
 /*
 * Local Enumerated Types
@@ -57,8 +61,8 @@
 ** Local Constants
 */
 #define ECH_REG_64_BIT_MASK                 0xFF000000
-#define ECH_REG_64_BIT_ADDRESS              0xA8000000
 #define ECH_TWI_DUMMY_DATA                  0xFF
+#define ECH_OCMB_INVALID_ADDR               0xFFFFFFFF
 
 
 /*
@@ -83,15 +87,15 @@ EXTERN VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_
 ** Global Variables
 */
 PUBLIC ech_twi_deferred_cmd_handler_struct ech_def_handler;
-
 PUBLIC UINT32 g_count_exp_fw_twi_cmd_status    = 0;
 PUBLIC UINT32 g_exp_fw_twi_cmd_boot_config     = 0;
 PUBLIC UINT32 g_exp_fw_twi_cmd_reg_addr_latch  = 0;
 PUBLIC UINT32 g_exp_fw_twi_cmd_reg_read        = 0;
 PUBLIC UINT32 g_exp_fw_twi_cmd_reg_write       = 0;
 PUBLIC UINT8 ech_twi_deferred_cmd_buf[EXP_TWI_MAX_BUF_SIZE];
+
 /* TWI status byte recording result of last TWI command */
-PUBLIC UINT8 ech_twi_status_byte = EXP_TWI_SUCCESS;
+PRIVATE UINT8 ech_twi_status_byte = EXP_TWI_SUCCESS;
 
 /*TWI CMD ID*/
 PUBLIC UINT8 twi_cmd_id = EXP_FW_TWI_CMD_NULL;
@@ -113,9 +117,24 @@ PUBLIC BOOL ech_pqm_mode = FALSE;
 /* TWI activity tracker */
 PUBLIC UINT32 twi_activity = TWI_SLAVE_ACTIVITY_NONE;
 
+
 /*
 ** Local Variables
 */
+
+/* poll abort flag used to exit infinite loops in config guide code */
+PRIVATE BOOL ech_twi_poll_abort_flag = TRUE;
+
+/*
+** see EBCF-10490
+** when TWI writes are into 64-bit OCMB memory space, the first 32-bit
+** TWI register write is buffered and then written as two back-to-back
+** writes that will be atomic as the code is running single threaded
+** IBM uses "left" for upper 32-bits and "right" for lower 32-bits of 64-bit
+** registers
+*/
+PRIVATE UINT32 ocmb_reg_left_addr = ECH_OCMB_INVALID_ADDR;
+PRIVATE UINT32 ocmb_reg_left_data;
 
 
 /* 
@@ -152,13 +171,15 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
     EXP_TWI_PQM_PRBS_GENERATOR_CONTROL_CMD_LEN,          /**< Enable SerDes PRBS generation engine */
     EXP_TWI_PQM_PRBS_ERR_COUNT_START_CMD_LEN,            /**< Start SerDes error count register */
     EXP_TWI_PQM_PRBS_ERR_COUNT_READ_CMD_LEN,             /**< Read SerDes error count register */
-    EXP_TWI_PQM_HORZ_BATHTUB_GET_START_CMD_LEN,          /**< Read horizontal bathtub values */
-    EXP_TWI_PQM_HORZ_BATHTUB_GET_READ_CMD_LEN,           /**< Start vertical bathtub values */
-    EXP_TWI_PQM_VERT_BATHTUB_GET_START_CMD_LEN,          /**< Read vertical bathtub values */
-    EXP_TWI_PQM_VERT_BATHTUB_GET_READ_CMD_LEN,           /**< Start 2d bathtub values */
-    EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN,          /**< Read 2d bathtub values */
-    EXP_TWI_PQM_VERT_BATHTUB_GET_READ_CMD_LEN
-
+    EXP_TWI_PQM_HORZ_BATHTUB_GET_START_CMD_LEN,          /**< Start horizontal bathtub values */
+    EXP_TWI_PQM_HORZ_BATHTUB_GET_READ_CMD_LEN,           /**< Read horizontal bathtub values */
+    EXP_TWI_PQM_VERT_BATHTUB_GET_START_CMD_LEN,          /**< Start vertical bathtub values */
+    EXP_TWI_PQM_VERT_BATHTUB_GET_READ_CMD_LEN,           /**< Read vertical bathtub values */
+    EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN,          /**< Start 2D bathtub values */
+    EXP_TWI_PQM_TWOD_BATHTUB_GET_READ_CMD_LEN,           /**< Read 2D bathtub values */
+    EXP_TWI_PQM_DELAY_LINE_UPDATE_CMD_LEN,               /**< Delay line update */
+    EXP_TWI_POLL_ABORT_CMD_LEN,                          /**< Abort command */
+    EXP_TWI_FFE_SETTINGS_CMD_LEN                         /**< FFE settings */
 };
 
 
@@ -173,12 +194,55 @@ PRIVATE UINT32 ech_twi_cmd_len[EXP_FW_TWI_CMD_MAX] =
 
 /**
 * @brief
-*   Get the TWI status byte
+*   Return the value of the extended poll abort flag This flag is set to TRUE by
+*   the host to direct the Explorer firmware to break out of
+*   infinite loops waiting on external signals. This flag is set
+*   to FALSE before the code enters an infinite loop.
+* 
+* @return
+*   FALSE - code will continue in polling mode
+*   TRUE - code will break out of polling mode
+*
+* @note
+*/
+PUBLIC BOOL ech_twi_poll_abort_flag_get(VOID)
+{
+    return ech_twi_poll_abort_flag;
+
+} /* ech_twi_poll_abort_flag_get */
+
+/**
+* @brief
+*   Set extended polling abort flag. This flag is set to TRUE by
+*   the host to direct the Explorer firmware to break out of
+*   infinite loops waiting on external signals. This flag is set
+*   to FALSE before the code enters an infinite loop.
+* 
+* @return Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_poll_abort_flag_set(BOOL abort_flag)
+{
+    ech_twi_poll_abort_flag = abort_flag;
+
+} /* ech_twi_poll_abort_flag_set*/
+
+/** 
+* @brief
+*   Get the TWI status byte. This byte constains the result of
+*   the last TWI message received by the Explorer. Poissble
+*   values are:
+*       EXP_TWI_SUCCESS (0x00)
+*       EXP_TWI_ERROR (0xC0)
+*       EXP_TWI_UNSUPPORTED (0xD0)
+*       EXP_TWI_BUSY (0xFE)
+*  
 * @params
 *   None
 *   
 * @return
-*   Nothing
+*   The TWI status byte.
 *
 * @note
 */
@@ -187,6 +251,19 @@ PUBLIC UINT8 ech_twi_status_byte_get(VOID)
     return ech_twi_status_byte;
 }
 
+/**
+* @brief
+*   Set the TWI status byte
+* @param [in] status_byte - FW Status BYTE
+* @return
+*   Nothing
+*
+* @note
+*/
+PUBLIC VOID ech_twi_status_byte_set(UINT8 status_byte)
+{
+    ech_twi_status_byte = status_byte;
+}
 
 /**
 * @brief
@@ -218,9 +295,9 @@ PUBLIC VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id,
     ech_def_handler.deferred_cmd_flag = TRUE;
 
     /* 
-    ** Since this command will be handled in VPE0,
+    ** Since this command will be handled by VPE0,
     ** increase rx index to allow the processing
-    ** of other I2C command.
+    ** of other I2C commands by VPE1
     ** 
     */
     ech_twi_rx_index_inc(len);
@@ -405,23 +482,66 @@ PUBLIC VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf)
                       (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 2] << 8) |
                       (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 3]);
 
-    /* validate the register address */
-    if (FALSE == ech_reg_addr_validate(reg_addr))
-    {
-        /* invalid/restricted address */
-        /* latch the "address" */
-        ech_latched_reg_addr_set(EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE);
+    /* presume latch succeeds, overwritten if error detected */
+    ech_twi_status_byte = EXP_TWI_SUCCESS;
 
-        /* failure status */
-        ech_twi_status_byte = EXP_TWI_ERROR;
+    if (OCMB_REGS_BASE_ADDR == (reg_addr & ECH_REG_64_BIT_MASK))
+    {
+        /* access into OCMB 64-bit memory address */
+
+        if (FALSE == ocmb_reg_addr_valid(reg_addr))
+        {
+            /* 
+            ** invalid OCMB reg address 
+            ** set the status query extended error code 
+            ** and the "address" in case host does not issue status query
+            ** before issuing second sequence of TWI read 
+            */ 
+            ech_extended_error_code_set(EXP_TWI_REG_RW_ADDR_INVALID);
+            ech_latched_reg_addr_set(EXP_TWI_REG_RW_ADDR_INVALID);
+            ech_twi_status_byte = EXP_TWI_ERROR;
+        }
+        else if (TRUE == ocmb_reg_addr_write_only(reg_addr))
+        {
+            /* 
+            ** write only OCMB reg address
+            ** set the status query extended error code 
+            ** and the "address" in case host does not issue status query
+            ** before issuing second sequence of TWI read 
+            */ 
+            ech_extended_error_code_set(EXP_TWI_REG_RW_WRITE_ONLY);
+            ech_latched_reg_addr_set(EXP_TWI_REG_RW_WRITE_ONLY);
+            ech_twi_status_byte = EXP_TWI_ERROR;
+        }
+
+        if (EXP_TWI_SUCCESS == ech_twi_status_byte)
+        {
+            /* valid OCMB address */
+
+            /* latch the address */
+            ech_latched_reg_addr_set(reg_addr);
+        }
     }
     else
     {
-        /* latch the address */
-        ech_latched_reg_addr_set(reg_addr);
+        /* validate the register address */
+        if (FALSE == ech_reg_addr_validate(reg_addr))
+        {
+            /* invalid/restricted address */
+            /* latch the "address" */
+            ech_latched_reg_addr_set(EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE);
 
-        /* set success status */
-        ech_twi_status_byte = EXP_TWI_SUCCESS;
+            /* failure status */
+            ech_twi_status_byte = EXP_TWI_ERROR;
+        }
+        else
+        {
+            /* latch the address */
+            ech_latched_reg_addr_set(reg_addr);
+
+            /* set success status */
+            ech_twi_status_byte = EXP_TWI_SUCCESS;
+        }
     }
 
     /* increment receive buffer index */
@@ -446,7 +566,9 @@ PUBLIC VOID ech_twi_reg_read_proc(UINT32 port_id, UINT8* rx_buf)
     UINT32 latched_reg_addr = ech_latched_reg_addr_get();
 
     if ((EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE == latched_reg_addr) ||
-        (EXP_TWI_REG_RW_ADDR_PROHIBITED == latched_reg_addr))
+        (EXP_TWI_REG_RW_ADDR_PROHIBITED == latched_reg_addr) ||
+        (EXP_TWI_REG_RW_ADDR_INVALID == latched_reg_addr) ||
+        (EXP_TWI_REG_RW_WRITE_ONLY == latched_reg_addr))
     {
         /* invalid register address */
         ech_twi_status_byte = latched_reg_addr;
@@ -502,42 +624,113 @@ PUBLIC VOID ech_twi_reg_write_proc(UINT8* rx_buf)
     UINT32 reg_addr;
     UINT32 reg_data;
 
-    /* prepare the register address  response */
+    /* prepare the register address */
     reg_addr = (rx_buf[EXP_TWI_CMD_DATA_OFFSET]     << 24) |
                (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 1] << 16) |
                (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 2] << 8)  |
                (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 3]);
 
-    /* validate the register address */
-    if (FALSE == ech_reg_addr_validate(reg_addr))
+    /* prepare the register data */
+    reg_data = (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 4] << 24) |
+               (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 5] << 16) |
+               (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 6] << 8)  |
+               (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 7]);
+
+    if (OCMB_REGS_BASE_ADDR == (reg_addr & ECH_REG_64_BIT_MASK))
     {
-        /* invalid/restricted address */
-        ech_twi_status_byte = EXP_TWI_ERROR;
-    }
-    else
-    {
-        /* prepare the data */
-        reg_data = (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 4] << 24) |
-                   (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 5] << 16) |
-                   (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 6] << 8)  |
-                   (rx_buf[EXP_TWI_CMD_DATA_OFFSET + 7]);
+        /* access into OCMB 64-bit memory address */
 
-        /* write the data */
-         *(UINT32*)reg_addr = reg_data;
-
-
-        /* 
-        ** If the address space is in IBM 64 BIT register location
-        ** by-pass the read check because write will only take effect
-        ** when complete 64 BIT data have been written.
-        */
-        if((reg_addr & ECH_REG_64_BIT_MASK) == ECH_REG_64_BIT_ADDRESS)
-        {            
-            /* set success status */
-            ech_twi_status_byte = EXP_TWI_SUCCESS;
+        /* validate the OCMB address */
+        if (FALSE == ocmb_reg_addr_valid(reg_addr))
+        {
+            /* invalid OCMB address */
+            ech_extended_error_code_set(EXP_TWI_REG_RW_ADDR_INVALID);
+            ech_twi_status_byte = EXP_TWI_ERROR;
         }
         else
         {
+            /*
+            ** see EBCF-10490
+            ** when TWI writes are into 64-bit OCMB memory space, the first 32-bit
+            ** TWI register write is buffered and then written as two back-to-back
+            ** writes that will be atomic as the code is running single threaded
+            ** IBM uses "left" for upper 32-bits and "right" for lower 32-bits of 64-bit
+            ** registers
+            */
+            if (ECH_OCMB_INVALID_ADDR == ocmb_reg_left_addr)
+            {
+                /* 
+                ** first 32-bit register write of 64-bit write 
+                ** ensure the address is a left address (upper 32 bits) 
+                */ 
+                if (TRUE == ocmb_left_address_validate(reg_addr))
+                {
+                    /* valid left address, record the address and data */
+                    ocmb_reg_left_addr = reg_addr;
+                    ocmb_reg_left_data = reg_data;
+
+                    /* set success status */
+                    ech_twi_status_byte = EXP_TWI_SUCCESS;
+                }
+                else
+                {
+                   /* invalid left address */
+                   ech_extended_error_code_set(EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID);
+                   ech_twi_status_byte = EXP_TWI_ERROR;
+                }
+            }
+            else
+            {
+                /* 
+                ** second 32-bit register write of 64-bit write
+                ** ensure the address is a right address (lower 32 bits) 
+                */ 
+                if (TRUE == ocmb_right_address_validate(reg_addr))
+                {
+                    /* valid right address */
+
+                    /* disable interrupts and disable multi-VPE operation */
+                    ocmb_plat_critical_region_enter();
+
+                    /* write the left data */
+                    *(UINT32*)ocmb_reg_left_addr = ocmb_reg_left_data;
+
+                    /* write the right data */
+                    *(UINT32*)reg_addr = reg_data;
+
+                    /* set success status */
+                    ech_twi_status_byte = EXP_TWI_SUCCESS;
+
+                    /* restore interrupts and enable multi-VPE operation */
+                    ocmb_plat_critical_region_exit();
+
+                    /* invalidate left address */
+                    ocmb_reg_left_addr = ECH_OCMB_INVALID_ADDR;
+                }
+                else
+                {
+                   /* invalid right address */
+                   ech_extended_error_code_set(EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID);
+                   ech_twi_status_byte = EXP_TWI_ERROR;
+                }
+            }
+        }
+    }
+    else
+    {
+        /* write to 32-bit memory address */
+
+        /* validate the register address */
+        if (FALSE == ech_reg_addr_validate(reg_addr))
+        {
+            /* invalid/restricted address */
+            ech_twi_status_byte = EXP_TWI_ERROR;
+        }
+        else
+        {
+            /* write the data */
+            *(UINT32*)reg_addr = reg_data;
+
             /* confirm the write succeeded */
             if (*(UINT32*)reg_addr == reg_data)
             {
@@ -639,22 +832,6 @@ PUBLIC VOID ech_twi_fw_mode_set(UINT8 fw_mode_byte)
 PUBLIC UINT8 ech_twi_fw_mode_get(void)
 {
     return ech_twi_fw_mode_byte;
-}
-
-
-
-/**
-* @brief
-*   Set the TWI status byte
-* @param [in] status_byte - FW Status BYTE
-* @return
-*   Nothing
-*
-* @note
-*/
-PUBLIC VOID ech_twi_status_byte_set(UINT8 status_byte)
-{
-    ech_twi_status_byte = status_byte;
 }
 
 /**

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -85,7 +85,31 @@
 #define SERDES_IQ_MAX_NEGATIVE      -16
 #define SERDES_IQ_MAX_POSITIVE      15
 
+/* SERDES rtrim_34_15 validity masks */
+#define SERDES_RTRIM_34_15_BIT6_VALID       0x40
+#define SERDES_RTRIM_34_15_MASK             0x00FF
+
 PRIVATE BOOL serdes_initialized = FALSE;
+
+/* SerDes FFE settings */
+#define SERDES_FFE_DEFAULT_PRECURSOR    0
+#define SERDES_FFE_MIN_PRECURSOR        0
+#define SERDES_FFE_MAX_PRECURSOR        32
+PRIVATE UINT32 serdes_ffe_precursor = SERDES_FFE_DEFAULT_PRECURSOR;
+
+#define SERDES_FFE_DEFAULT_POSTCURSOR   0
+#define SERDES_FFE_MIN_POSTCURSOR       0
+#define SERDES_FFE_MAX_POSTCURSOR       32
+PRIVATE UINT32 serdes_ffe_postcursor = SERDES_FFE_DEFAULT_POSTCURSOR;
+
+#define SERDES_FFE_DEFAULT_CALIBRATION  0x28
+#define SERDES_FFE_MIN_CALIBRATION      64
+#define SERDES_FFE_MAX_CALIBRATION      80
+PRIVATE UINT32 serdes_fuse_val_stat_1 = 0;
+PRIVATE UINT32 serdes_ffe_calibration = SERDES_FFE_MIN_CALIBRATION;
+
+#define SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION  0
+
 
 /*
 ** Private Functions
@@ -187,6 +211,166 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_1(UINT32 lane, UINT32 frequen
 
 /**
 * @brief
+ *Sets the PX 6-bit words that control the TX amplitude.  
+ *  
+* @param [in] cursor_val: pre/postcursor value 
+*  
+* @return
+*   returns an integer number that represents the TX*_P**_D*EN
+*   code needed to have “val” worth of TX segments enabled
+*   eg. to enable 6 TX segments, we would need to set
+*   TX*_P**_D*EN to 32 (32==b100000), dec2pseudobin(6) = 32
+* 
+* @note 
+*   Code based on functions provided by mixed signal   
+*/  
+PRIVATE UINT32 dec2pseudobin(UINT32 cursor_val)
+{
+    UINT32 retval = 0;
+    
+    /* 
+    ** bit[5] == +6;  bit[4] == +4;  bit[3] == +2;     
+    ** bit[2] == +2;  bit[1] == +1;  bit[0] == +1;     
+    **   E.g.: 21 (dec) == 01 0101 (bin)     
+    **   --> Weight of TX bank = +4 +2 +1 = +7. 
+    **       Hence for a weight of +7, a PXX_DXEN[5:0]=21 is needed. 
+    */ 
+    
+    /* 
+    ** Case statement was easier to build for 16 values than
+    ** a mathematical equation that does the same thing 
+    */ 
+    switch (cursor_val)
+    {
+        case 0 : retval=0 ; break;   //000000
+        case 1 : retval=2  ; break;  //000010
+        case 2 : retval=8  ; break;  //001000
+        case 3 : retval=10 ; break;  //001010
+
+        case 4 : retval=16 ; break;  //010000
+        case 5 : retval=18 ; break;  //010010
+        case 6 : retval=32 ; break;  //100000
+        case 7 : retval=34 ; break;  //100010
+
+        case 8 : retval=40 ; break;  //101000
+        case 9 : retval=42 ; break;  //101010 
+        case 10: retval=48 ; break;  //110000
+        case 11: retval=50 ; break;  //110010
+
+        case 12: retval=56 ; break;  //111000
+        case 13: retval=58 ; break;  //111010
+        case 14: retval=60 ; break;  //111100
+        case 15: retval=62 ; break;  //111110
+
+        case 16: retval=63 ; break;  //111111 
+        default: retval=0 ;
+    }
+    
+    return retval;
+}
+
+/**
+* @brief 
+*  Sets the PX 6-bit words that control the TX amplitude.
+*  
+* @param [in] cursor_val: pre/postcursor value 
+*  
+* @param [out] tx_pxa_d1en_ptr 
+* @param [out] tx_pxa_d2en_ptr 
+* @param [out] tx_pxb_d1en_ptr 
+* @param [out] tx_pxb_d2en_ptr 
+* @return
+*   Nothing
+* 
+* @note 
+*   Code based on functions provided by mixed signal   
+*/  
+PRIVATE VOID serdes_plat_setpx(UINT32  cursor_val, 
+                               UINT32* tx_pxa_d1en_ptr, 
+                               UINT32* tx_pxa_d2en_ptr,
+                               UINT32* tx_pxb_d1en_ptr,
+                               UINT32* tx_pxb_d2en_ptr)
+{
+    if (cursor_val > 16) 
+    {
+        *tx_pxa_d2en_ptr = 63;
+        *tx_pxa_d1en_ptr = 0;
+        *tx_pxb_d2en_ptr = dec2pseudobin(cursor_val - 16);
+        *tx_pxb_d1en_ptr = 63 - (*tx_pxb_d2en_ptr);
+    } 
+    else 
+    {
+        *tx_pxa_d2en_ptr = dec2pseudobin(cursor_val);
+        *tx_pxa_d1en_ptr = 63 - (*tx_pxa_d2en_ptr); 
+        *tx_pxb_d2en_ptr = 0;   
+        *tx_pxb_d1en_ptr = 63; 
+    }
+}
+
+/**
+* @brief
+* Sets the 13 6-bit words that control the TX amplitude. The  
+* encoding scheme is set to have maxswing on the TX output.  
+*  
+* @param [in] precursor: FFE precursor setting
+* @param [in] postcursor: FFE postcursor setting
+* @param [in] calibration: FFE calibration 
+*  
+* @param [out] tx_p1a_d1en_ptr 
+* @param [out] tx_p1a_d2en_ptr 
+* @param [out] tx_p1b_d1en_ptr 
+* @param [out] tx_p1b_d2en_ptr 
+* @param [out] tx_p2a_d1en_ptr 
+* @param [out] tx_p2a_d2en_ptr 
+* @param [out] tx_p2b_d1en_ptr 
+* @param [out] tx_p2b_d2en_ptr 
+* @param [out] tx_p1a_pten_ptr 
+* @param [out] tx_p1b_pten_ptr 
+* @param [out] tx_p2a_pten_ptr 
+* @param [out] tx_p2b_pten_ptr 
+* @param [out] tx_p3a_d1en_ptr 
+*  
+* @return
+*   Nothing
+* 
+* @note 
+*   Code based on functions provided by mixed signal   
+*/  
+PRIVATE VOID serdes_plat_txctrls_maxswing(UINT32  precursor, 
+                                          UINT32  postcursor, 
+                                          UINT32  calibration, 
+                                          UINT32* tx_p1a_d1en_ptr, 
+                                          UINT32* tx_p1a_d2en_ptr,    
+                                          UINT32* tx_p1b_d1en_ptr, 
+                                          UINT32* tx_p1b_d2en_ptr,          
+                                          UINT32* tx_p2a_d1en_ptr, 
+                                          UINT32* tx_p2a_d2en_ptr,    
+                                          UINT32* tx_p2b_d1en_ptr, 
+                                          UINT32* tx_p2b_d2en_ptr, 
+                                          UINT32* tx_p1a_pten_ptr, 
+                                          UINT32* tx_p1b_pten_ptr, 
+                                          UINT32* tx_p2a_pten_ptr, 
+                                          UINT32* tx_p2b_pten_ptr,
+                                          UINT32* tx_p3a_d1en_ptr) 
+{
+    /* calculate the P2 settings */
+    serdes_plat_setpx(precursor, tx_p2a_d1en_ptr, tx_p2a_d2en_ptr, tx_p2b_d1en_ptr, tx_p2b_d2en_ptr);
+
+    /* calculate the P1 settings */
+    serdes_plat_setpx(postcursor, tx_p1a_d1en_ptr, tx_p1a_d2en_ptr, tx_p1b_d1en_ptr, tx_p1b_d2en_ptr);
+
+    /* calculate the P3 settings */
+    *tx_p3a_d1en_ptr = dec2pseudobin(calibration - SERDES_FFE_MIN_CALIBRATION);
+
+    /* max swing implies that PT=0 (i.e.: disable TX parallel termination */
+    *tx_p1a_pten_ptr = SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION;
+    *tx_p1b_pten_ptr = SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION;
+    *tx_p2a_pten_ptr = SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION;
+    *tx_p2b_pten_ptr = SERDES_FFE_DISABLE_TX_PARALLEL_TERMINATION;
+}
+
+/**
+* @brief
 *   Low Level SerDes init sequence 2
 *
 * @param [in] lane: lane being configured
@@ -196,12 +380,26 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_1(UINT32 lane, UINT32 frequen
 *   PMC_SUCCESS for SUCCESS, otherwise error codes.
 * 
 * @note
-* 
 */
 PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state)
 {
     UINT32 rc;
     UINT32 tap_sel, udfe_mode;
+    UINT32 rtrim_14_0;
+    UINT32 rtrim_34_15;
+    UINT32 tx_p1a_d1en;
+    UINT32 tx_p1a_d2en;
+    UINT32 tx_p1b_d1en;
+    UINT32 tx_p1b_d2en;          
+    UINT32 tx_p2a_d1en;
+    UINT32 tx_p2a_d2en;
+    UINT32 tx_p2b_d1en;
+    UINT32 tx_p2b_d2en; 
+    UINT32 tx_p1a_pten;
+    UINT32 tx_p1b_pten;
+    UINT32 tx_p2a_pten;
+    UINT32 tx_p2b_pten;
+    UINT32 tx_p3a_d1en;
 
     /* set the offset for the lane being configured */
     UINT32 lane_offset = lane * SERDES_LANE_REG_OFFSET;
@@ -224,8 +422,136 @@ PRIVATE UINT32 serdes_plat_low_level_init_sequence_2(UINT32 lane, BOOL dfe_state
     /* initialize PGA */        
     SERDES_FH_PGA_init(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
 
-    /* set up the near end transmitter settings */
-    SERDES_FH_NETX_Settings_default(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);
+    /* determine if the host provided non-default FFE settings */
+    if ((SERDES_FFE_DEFAULT_PRECURSOR == serdes_ffe_precursor) ||
+        (SERDES_FFE_DEFAULT_POSTCURSOR == serdes_ffe_postcursor))
+    {
+        /* default FFE values being used */
+
+        /* determine if a valid fuse value setting should be used */
+
+        /* read rtrim settings */
+        SERDES_FH_read_rtrim((SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset),
+                             &rtrim_14_0,
+                             &rtrim_34_15);
+
+        if (SERDES_RTRIM_34_15_BIT6_VALID == (rtrim_34_15 & SERDES_RTRIM_34_15_BIT6_VALID))
+        {
+            /* set up the near end transmitter settings using value from FUSE_VAL_STAT_1:RTRIM_34_15 */
+            SERDES_FH_NETX_Settings_value((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
+                                          ((rtrim_34_15 & ~SERDES_RTRIM_34_15_BIT6_VALID) & SERDES_RTRIM_34_15_MASK));
+        }
+        else
+        {
+            /* set up the near end transmitter using default settings */
+            SERDES_FH_NETX_Settings_default(SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset);        
+        }
+    }
+    else
+    {
+        /* host has provided non-default FFE pre- and/or post-cursor values
+        ** calculate FFE settings based on code provided by mixed signal 
+        */ 
+
+        /* determine if a valid fuse value setting should be used */
+
+        /* read rtrim settings */
+        SERDES_FH_read_rtrim((SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset),
+                             &rtrim_14_0,
+                             &rtrim_34_15);
+
+        if (SERDES_RTRIM_34_15_BIT6_VALID == (rtrim_34_15 & SERDES_RTRIM_34_15_BIT6_VALID))
+        {
+            /* valid setting in fuse register, use FUSE_VAL_STAT_1:RTRIM_34_15 */
+            serdes_fuse_val_stat_1 = (rtrim_34_15 & ~SERDES_RTRIM_34_15_BIT6_VALID) & SERDES_RTRIM_34_15_MASK;
+        }
+
+        /* 
+        ** set the FFE calibration value as per mixed signal:
+        ** CAL (in decimal) = 64 + TX3_P3A_D1EN[5]*6 + TX3_P3A_D1EN[4]*4 + TX3_P3A_D1EN[3]*2
+        **                    + TX3_P3A_D1EN[2]*2 + TX3_P3A_D1EN[1]*1 + TX3_P3A_D1EN[0]*1
+        **  
+        ** serdes_ffe_fuse_val_stat_1 can be set to TX3_P3A_D1EN but a value for TX3_P3A_D1EN 
+        ** is re-calculated as one of the set of the 13 6-bit values. The calculated value is 
+        ** usually the same as serdes_ffe_fuse_val_stat_1. 
+        */ 
+        serdes_ffe_calibration = SERDES_FFE_MIN_CALIBRATION +
+                                 (((serdes_fuse_val_stat_1 & 0x20) >> 5) * 6) +
+                                 (((serdes_fuse_val_stat_1 & 0x10) >> 4) * 4) +
+                                 (((serdes_fuse_val_stat_1 & 0x08) >> 3) * 2) +
+                                 (((serdes_fuse_val_stat_1 & 0x04) >> 2) * 2) +
+                                 (((serdes_fuse_val_stat_1 & 0x02) >> 1) * 1) +
+                                 (((serdes_fuse_val_stat_1 & 0x01) >> 0) * 1);
+
+
+        /* 
+        ** calculate the 13 6-bit words that control the TX amplitude
+        ** the encoding scheme is set to have maxswing on the TX output
+        */
+        serdes_plat_txctrls_maxswing(serdes_ffe_precursor,
+                                     serdes_ffe_postcursor,
+                                     serdes_ffe_calibration,
+                                     &tx_p1a_d1en,
+                                     &tx_p1a_d2en,
+                                     &tx_p1b_d1en,
+                                     &tx_p1b_d2en,
+                                     &tx_p2a_d1en,
+                                     &tx_p2a_d2en,
+                                     &tx_p2b_d1en,
+                                     &tx_p2b_d2en,
+                                     &tx_p1a_pten,
+                                     &tx_p1b_pten,
+                                     &tx_p2a_pten,
+                                     &tx_p2b_pten,
+                                     &tx_p3a_d1en);
+
+        /* apply the calculated settings */
+        SERDES_FH_NETX_Settings_calcprepost((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
+                                            tx_p2b_d2en,
+                                            tx_p2b_d1en,
+                                            tx_p2a_pten,
+                                            tx_p2a_d2en,
+                                            tx_p2a_d1en,
+                                            tx_p1b_d2en,
+                                            tx_p1b_d1en,
+                                            tx_p1a_pten,
+                                            tx_p1a_d2en,
+                                            tx_p1a_d1en,
+                                            tx_p3a_d1en,
+                                            tx_p2b_pten,
+                                            tx_p1b_pten);
+    }
+
+    /* read the parameters that got applied */
+    serdes_api_ffe_prepost_settings_read(lane_offset,
+                                         &tx_p2b_d2en,
+                                         &tx_p2b_d1en,
+                                         &tx_p2a_pten,
+                                         &tx_p2a_d2en,
+                                         &tx_p2a_d1en,
+                                         &tx_p1b_d2en,
+                                         &tx_p1b_d1en,
+                                         &tx_p1a_pten,
+                                         &tx_p1a_d2en,
+                                         &tx_p1a_d1en,
+                                         &tx_p3a_d1en,
+                                         &tx_p2b_pten,
+                                         &tx_p1b_pten);
+
+    /* dump the settings for the current lane */
+    bc_printf("[%d] tx_p1a_d1en = 0x%02X\n", lane, tx_p1a_d1en);
+    bc_printf("[%d] tx_p1a_d2en = 0x%02X\n", lane, tx_p1a_d2en);
+    bc_printf("[%d] tx_p1b_d1en = 0x%02X\n", lane, tx_p1b_d1en);
+    bc_printf("[%d] tx_p1b_d2en = 0x%02X\n", lane, tx_p1b_d2en);
+    bc_printf("[%d] tx_p2a_d1en = 0x%02X\n", lane, tx_p2a_d1en);
+    bc_printf("[%d] tx_p2a_d2en = 0x%02X\n", lane, tx_p2a_d2en);
+    bc_printf("[%d] tx_p2b_d1en = 0x%02X\n", lane, tx_p2b_d1en);
+    bc_printf("[%d] tx_p2b_d2en = 0x%02X\n", lane, tx_p2b_d2en);
+    bc_printf("[%d] tx_p1a_pten = 0x%02X\n", lane, tx_p1a_pten);
+    bc_printf("[%d] tx_p1b_pten = 0x%02X\n", lane, tx_p1b_pten);
+    bc_printf("[%d] tx_p2a_pten = 0x%02X\n", lane, tx_p2a_pten);
+    bc_printf("[%d] tx_p2b_pten = 0x%02X\n", lane, tx_p2b_pten);
+    bc_printf("[%d] tx_p3a_d1en = 0x%02X\n", lane, tx_p3a_d1en);
 
     /**
      * From the config guide: 
@@ -1066,7 +1392,7 @@ PUBLIC UINT32 serdes_plat_low_level_init(UINT8 lane_bitmask,
             /* initialize lane alignment part 2 on all lanes except master lane 4 */
             if (i != SERDES_LANE_4)
             {
-                rc = SERDES_FH_TX_alignment((SERDES_CSU_PCBI_BASE_ADDR + lane_offset) , (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset));
+                rc = SERDES_FH_TX_alignment(SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset);
                 if (TRUE != rc)
                 {
                     bc_printf("[%d] EXP_SERDES_FH_TX_ALIGNMENT_FAIL\n", i);
@@ -1312,117 +1638,6 @@ PUBLIC UINT8 serdes_plat_loopback_test(UINT8 lane_bitmask)
     return return_code;
 }
 
-#if (EXPLORER_PE_BUILD == 1)
-/**
-* @brief
-*   Low Level SerDes init routine to initialize a single serdes lane
-*
-* @param [in] lane: A single lane to initialize
-* @param [in] frequency: SerDes frequency
-* @param [in] dfe_state: TRUE=DFE enabled; FALSE=DFE disabled
-*
-* @return
-*   PMC_SUCCESS for SUCCESS, otherwise error codes.
-*
-* @note
-*
-*/
-PUBLIC UINT32 serdes_plat_low_level_single_lane_init(UINT32 lane,
-                                                     UINT32 frequency,
-                                                     BOOL dfe_state)
-{
-    BOOL    rc;
-    UINT32  lane_offset;
-    UINT8   lane_bitmask = 1 << lane;
-
-    /* deassert serdes reset */
-    top_exp_cfg_deassert_serdes_reset(TOP_XCBI_BASE_ADDR);
-
-    /* Run initial config guide initialization. */
-
-    /* set the offset for the lane being configured */
-    lane_offset = lane * SERDES_LANE_REG_OFFSET;
-
-    /* initialize termination on supported lanes */
-    SERDES_FH_fw_init(SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset);
-
-    
-    bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_1\n", lane);
-    /* apply the first initialization sequence on all lanes */
-    rc = serdes_plat_low_level_init_sequence_1(lane_bitmask, frequency);
-
-    if (PMC_SUCCESS != rc)
-    {
-        return (rc);
-    }
-            
-    bc_printf("[%d] TWI_BOOT_CONFIG: serdes_plat_low_level_init_sequence_2\n", lane);;
-    
-    rc = serdes_plat_low_level_init_sequence_2(lane_bitmask, dfe_state);
-    if (PMC_SUCCESS != rc)
-    {
-        bc_printf("[%d] serdes_plat_low_level_init_sequence_2 failed", lane);
-        return (rc);
-    }
-    
-    bc_printf("TWI_BOOT_CONFIG: DDLL Init Start\n");
-
-    /* Configure the DDLL. */
-    rc = top_exp_cfg_DDLL(DDLL_REGS_BASE_ADDR, TOP_XCBI_BASE_ADDR);        
-
-    if( rc == FALSE)
-    {
-        bc_printf("TWI_BOOT_CONFIG: DDLL Lock error \n");
-        return EXP_SERDES_DDLL_LOCK_FAIL;
-        
-    }
-    bc_printf("TWI_BOOT_CONFIG: DDLL Init End\n");
-
-    
-    bc_printf("Deasserting OCMB...\n");
-    
-    /* apply top-level OCMB PHY reset */
-    if (FALSE == top_exp_cfg_deassert_phy_ocmb_reset(TOP_XCBI_BASE_ADDR))
-    {
-        bc_printf("Deasserting OCMB...FAILED\n");
-        /* 
-        ** OCMB reset deassertion failed 
-        */            
-        return EXP_SERDES_DEASSERT_PHY_OCMB_RESET_FAIL;
-    }
-    
-    bc_printf("Deasserting OCMB...DONE\n");
-    
-    /* initialize lane alignment part 1 to all lanes*/
-   /* set the offset for the lane being configured */
-    lane_offset = lane * SERDES_LANE_REG_OFFSET;
-    rc = SERDES_FH_alignment_init_1((SERDES_MTSB_CTRL_PCBI_BASE_ADDR + lane_offset),
-                           (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset), TRUE);
-    if (TRUE != rc)
-    {
-        bc_printf("[%d] EXP_SERDES_FH_ALIGNMENT1_FAILED\n", lane);
-        return EXP_SERDES_FH_ALIGNMENT_INIT_1_FAIL;
-    }
-    
-    /* initialize lane alignment part 2 on all lanes except master lane 4 */
-    if (lane != SERDES_LANE_4)
-    {
-        
-        /* set the offset for the lane being configured */
-        lane_offset = lane * SERDES_LANE_REG_OFFSET;
-        rc = SERDES_FH_TX_alignment((SERDES_CSU_PCBI_BASE_ADDR + lane_offset) , (SERDES_CHANNEL_PCBI_BASE_ADDR + lane_offset));        
-        if (TRUE != rc)
-        {
-            bc_printf("[%d] EXP_SERDES_FH_TX_ALIGNMENT_FAIL\n", lane);
-            return EXP_SERDES_FH_TX_ALIGNMENT_FAIL;
-        }
-    }
-
-
-    return PMC_SUCCESS;
-}
-#endif
-
 /**
 * @brief
 *   Register SERDES register dump with the crash dump module
@@ -1470,6 +1685,66 @@ PUBLIC VOID serdes_plat_initialized_set(BOOL is_initialized)
 PUBLIC BOOL serdes_plat_initialized_get(VOID)
 {
     return serdes_initialized;
+}
+
+/**
+* @brief
+*    Get SERDES FFE pre-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC UINT32 serdes_plat_ffe_precursor_get(VOID)
+{
+    return serdes_ffe_precursor;
+}
+
+/**
+* @brief
+*    Set SERDES FFE pre-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC VOID serdes_plat_ffe_precursor_set(UINT32 precursor)
+{
+    serdes_ffe_precursor = precursor;
+}
+
+/**
+* @brief
+*    Get SERDES FFE post-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC UINT32 serdes_plat_ffe_postcursor_get(VOID)
+{
+    return serdes_ffe_postcursor;
+}
+
+/**
+* @brief
+*    Set SERDES FFE post-cursor value.
+*
+* @return
+*   Nothing
+*
+* @note
+*
+*/
+PUBLIC VOID serdes_plat_ffe_postcursor_set(UINT32 postcursor)
+{
+    serdes_ffe_postcursor = postcursor;
 }
 
 /** @} end group */

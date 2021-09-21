@@ -200,8 +200,8 @@ LDFLAGS+= -rawimport  $(FW_VERSION).bin
 all: $(PROGRAM).elf
 	rm -f $(FW_VERSION).bin
 ifdef SIGN
-	$(APP_PLAT_DIR)/build/sign_fw_image.sh -a $(SRCTL)/tools/bin/lib/gobinz.exe -i $(PROGRAM).mem -o signed_$(PROGRAM).mem -c $(CSV)
-	$(APP_PLAT_DIR)/build/make_fw_partition.sh -i signed_$(PROGRAM).mem -a signed_$(PROGRAM)_jtag_A.out -b signed_$(PROGRAM)_jtag_B.out -f signed_$(PROGRAM)_full_mage.out 
+	$(SRCTL)/tools/bin/sign_fw_image.sh -a $(SRCTL)/tools/bin/lib/gobinz.exe -i $(PROGRAM).mem -o signed_$(PROGRAM).mem -c $(CSV)
+	$(APP_PLAT_DIR)/build/make_fw_partition.sh -i signed_$(PROGRAM).mem -a signed_$(PROGRAM)_jtag_A.out -b signed_$(PROGRAM)_jtag_B.out -f signed_$(PROGRAM)_full_image.out 
 endif
 
 $(PROGRAM).elf: $(FW_VERSION).bin

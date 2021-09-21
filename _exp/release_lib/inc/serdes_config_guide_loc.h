@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -20,11 +20,11 @@
 *     Please put this file in the same location as the source file.
 *     
 *     This file is generated from:
-*     Foxhound_RevA_Config_Guide_pdox_r0_47.xlsx (0.47)
+*     Foxhound_RevA_Config_Guide_pdox_r0_53.xlsx (0.53)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_47.xlsx
-*     -r0.47 -pFoxhound_RevA_Config_Guide_pdox_r0_47.parsed
+*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_53.xlsx
+*     -r0.53 -pFoxhound_RevA_Config_Guide_pdox_r0_53.parsed
 *     -nnamespace_exp_p_a_release_047.tcl -cserdes_config_guide.c
 *     -hserdes_config_guide.h
 *     -xFHCG_init,FHCG_LBinit,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,FH_IQ_Offset_Calibration

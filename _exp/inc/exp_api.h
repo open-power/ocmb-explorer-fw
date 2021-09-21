@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -122,8 +122,6 @@
 #define EXP_TWI_BOOT_CFG_SERDES_FH_RX_ALIGNMENT_FAIL       0x01
 #define EXP_TWI_BOOT_CFG_SERDES_RX_PATB_TIMEOUT_FAIL       0x02       
 
-
-
 /* TWI boot config Adaptation Enable */
 #define EXP_TWI_BOOT_CFG_SERDES_ADAPTATION_ENABLE_BITMSK                 0x8000
 #define EXP_TWI_BOOT_CFG_SERDES_ADAPTATION_BITOFF                        15
@@ -185,6 +183,10 @@
 /* TWI register read/write errors */
 #define EXP_TWI_REG_RW_ADDR_OUT_OF_RANGE        0x01
 #define EXP_TWI_REG_RW_ADDR_PROHIBITED          0x02
+#define EXP_TWI_REG_RW_ADDR_INVALID             0x03
+#define EXP_TWI_REG_RW_WRITE_ONLY               0x04
+#define EXP_TWI_REG_OCMB_LEFT_ADDRESS_INVALID   0x05
+#define EXP_TWI_REG_OCMB_RIGHT_ADDRESS_INVALID  0x06
 
 /* TWI Status command/response lengths */
 #define EXP_TWI_STATUS_CMD_LEN                  1
@@ -251,6 +253,13 @@
 #define EXP_TWI_CONT_WRITE_CMD_DATA_LEN         4
 #define EXP_TWI_CONT_WRITE_CMD_LEN              (EXP_TWI_CONT_WRITE_CMD_DATA_LEN + 2)
 
+/* TWI Poll Abort command length */
+#define EXP_TWI_POLL_ABORT_CMD_LEN              1
+
+/* TWI FFE Settings command length */
+#define EXP_TWI_FFE_SETTINGS_CMD_DATA_LEN       8
+#define EXP_TWI_FFE_SETTINGS_CMD_LEN            (EXP_TWI_FFE_SETTINGS_CMD_DATA_LEN + 2)
+
 /* TWI bypass start-up timeout */
 #define EXP_TWI_BYPASS_4SEC_TIMEOUT             1
 
@@ -312,7 +321,7 @@
 #define EXP_TWI_PQM_TWOD_BATHTUB_GET_CMD_DATA_LEN               10
 #define EXP_TWI_PQM_TWOD_BATHTUB_GET_START_CMD_LEN              (EXP_TWI_PQM_TWOD_BATHTUB_GET_CMD_DATA_LEN + 2)
 #define EXP_TWI_PQM_TWOD_BATHTUB_GET_READ_CMD_LEN               1
-#define EXP_TWI_DELAY_LINE_UPDATE_CMD_LEN                       1
+#define EXP_TWI_PQM_DELAY_LINE_UPDATE_CMD_LEN                   1
 
 /* API response codes */
 #define EXP_FW_API_SUCCESS              0
@@ -377,8 +386,8 @@
 #define EXP_SERDES_8_LANE_BITMASK       0xFF   /**< Enabled Lanes: 0, 1, 2, 3, 4, 5, 6, 7 */
 
 /* SerDes pattern check bitmask */
-#define EXP_SERDES_4_LANE_PAT_BITMASK       0xA5   /**< Enabled lanes: 0, 2, 5, 7 */
-#define EXP_SERDES_8_LANE_PAT_BITMASK       0xFF   /**< Enabled Lanes: 0, 1, 2, 3, 4, 5, 6, 7 */
+#define EXP_SERDES_4_LANE_PAT_BITMASK   0xA5   /**< Enabled lanes: 0, 2, 5, 7 */
+#define EXP_SERDES_8_LANE_PAT_BITMASK   0xFF   /**< Enabled Lanes: 0, 1, 2, 3, 4, 5, 6, 7 */
 
 /* SerDes lane configuration errors */
 #define EXP_SERDES_LANE_OOR             1
@@ -523,6 +532,8 @@ typedef enum
     EXP_FW_PQM_2D_BATHTUB_GET_START,                /**< Read 2d bathtub values */
     EXP_FW_PQM_2D_BATHTUB_GET_READ,
     EXP_FW_PQM_FORCE_DELAY_LINE_UPDATE,             /**< Command to force DDR PHY delay line update */
+    EXP_FW_TWI_POLL_ABORT,                          /**< Command to abort config guide polling sequence */
+    EXP_FW_TWI_FFE_SETTINGS,                        /**< Command to set FFE PRE and POST cursor values priot too boot config */
     EXP_FW_TWI_CMD_MAX
 
 } exp_twi_cmd_enum;
@@ -612,20 +623,6 @@ typedef struct
     UINT32 crc;             /**< CRC of response */
 
 } exp_rsp_struct;
-
-/**
-*  @brief
-*   ECH TWI Deferred Command Handler Structure
-*/
-typedef struct
-{
-    volatile BOOL       deferred_cmd_flag;                      /**< When Set, VPE0 will process this command */
-    exp_twi_cmd_enum    command_id;                             /**< Command ID */
-    UINT32              (*deferred_cmd_handler)(UINT8 *, UINT32);       /**< Command Handler */
-    UINT8               *cmd_buf;                               /**< Command Buffer required for command handler */
-    UINT32               cmd_buf_idx;                           /**< Command Buffer index required for command handler */
-    VOID                (*callback_handler) (UINT8);            /**< Callback Handler */
-} ech_twi_deferred_cmd_handler_struct;
 
 /** 
 *  @brief 
@@ -1011,9 +1008,6 @@ typedef struct
 /*
 ** Extern variables
 */
-
-EXTERN ech_twi_deferred_cmd_handler_struct ech_def_handler;
-
 
 #endif /* _ECH_API_H */
 /** @} end addtogroup */

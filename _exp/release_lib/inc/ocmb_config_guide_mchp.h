@@ -19,11 +19,11 @@
 *     Generated register header file to be used by ocmb_config_guide_mchp.c.
 *     
 *     This file is generated from:
-*     ocmb_config_guide_mchp_v30.xlsx (mchp_v30)
+*     ocmb_config_guide_mchp_v31.xlsx (mchp_v31)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gocmb_config_guide_mchp_v30.xlsx -rmchp_v30
-*     -pocmb_config_guide_mchp_v30.parsed -nnamespace_exp_p_a_release_047.tcl
+*     python ConfigGuideConv.py -gocmb_config_guide_mchp_v31.xlsx -rmchp_v31
+*     -pocmb_config_guide_mchp_v31.parsed -nnamespace_exp_p_a_release_047.tcl
 *     -cocmb_config_guide_mchp.c -hocmb_config_guide_mchp.h -xexp_ccs_config
 *     -focmb_cfg -a -64bit
 * 
@@ -47,10 +47,12 @@
 EXTERN BOOL ocmb_cfg_exp_mcbist_maint_config(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_exp_mcbist_config_W_RWW(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_exp_mcbist_config_W_RRW(UINT32 ocmb_base_addr);
-EXTERN BOOL ocmb_cfg_RxPatAorB(UINT32 ocmb_base_add, UINT8 lane_bitmask);
+EXTERN BOOL ocmb_cfg_RxPatAorB(UINT32 ocmb_base_addr,
+                               UINT32 lane_bitmask);
 EXTERN BOOL ocmb_cfg_exp_mcbist_config(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_exp_mcbist_config_RandCmdSeq(UINT32 ocmb_base_addr);
-EXTERN BOOL ocmb_cfg_RxPatB(UINT32 ocmb_base_addr, UINT8 lane_bitmask);
+EXTERN BOOL ocmb_cfg_RxPatB(UINT32 ocmb_base_addr,
+                            UINT32 lane_bitmask);
 EXTERN BOOL ocmb_cfg_SendPatB(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_SendPatA(UINT32 ocmb_base_addr);
 EXTERN BOOL ocmb_cfg_exp_mcbist_config_W_RW(UINT32 ocmb_base_addr);

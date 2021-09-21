@@ -24,8 +24,8 @@
 *******************************************************************************/
 
 
-#ifndef _OCMB_H
-#define _OCMB_H
+#ifndef _EXP_DDR_CTRLR_H
+#define _EXP_DDR_CTRLR_H
 
 /*
 ** Include Files
@@ -209,6 +209,6 @@ typedef struct
 
 EXTERN BOOL exp_ddr_ctrlr_spd_config(UINT32 ocmb_base_addr, exp_ddr_ctrlr_spd_config_struct spd_config);
 
-#endif /* _OCMB_SPD_CFG_H */
+#endif /* _EXP_DDR_CTRLR_H */
 
 

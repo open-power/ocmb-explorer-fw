@@ -23,7 +23,7 @@
 * on the Synopsys DDR Firmware, and reproduce such notices on all copies of the 
 * Synopsys DDR Firmware. 
 *                                                                               
-* THE SYNOPSYS FIRMWARE IS PROVIDED “AS IS” AND WITHOUT ANY WARRANTY.  SYNOPSYS 
+* THE SYNOPSYS FIRMWARE IS PROVIDED ?AS IS? AND WITHOUT ANY WARRANTY.  SYNOPSYS 
 * AND MICROCHIP EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES, EXPRESS, IMPLIED OR 
 * OTHERWISE, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
 * PARTICULAR PURPOSE, AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF A 
@@ -50,11 +50,13 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
 #if defined PMC_DDR_SIM_DPI
 #define TRACE(...)  MSDG_TRACE(__VA_ARGS__)
 #define MSDG_TRACE(trace_enum, fw_format, msdg_format, ...) sprintf(ppp, msdg_format ,##__VA_ARGS__); ddr_phy_print(ppp)
+#define TRACETMP(...) sprintf(ppp, ##__VA_ARGS__); ddr_phy_print(ppp)
 #else
 #define FW_DDR_TRACE(args...) sprintf(ppp, args); ddr_phy_print(ppp)
 #define TRACE(...)  FW_TRACE(__VA_ARGS__)
 #define FW_TRACE(trace_enum, fw_format, msdg_format, ...) trace_print(trace_enum, fw_format, ##__VA_ARGS__)
 
+#define TRACETMP(...) sprintf(ppp, ##__VA_ARGS__); ddr_phy_print(ppp)
 #define microsemi_memset(args...) memset(args)
 #endif
 
@@ -85,7 +87,7 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
 #ifdef PMC_DDR_SIM_DPI
 #ifndef DDR_SUCCESS
 #define DDR_SUCCESS                             (0x000)
-#endif 
+#endif
 #endif
 
 #define DDR_ERR_GEN_BAD_PTR                     DDR_ERR_CODE_CREATE(0x000)
@@ -202,6 +204,7 @@ typedef struct _PMU_SMB_LPDDR3_1D_t {char notEmpty;} PMU_SMB_LPDDR3_1D_t;
 #define DDR_VREF_GLOBAL                   (0x1)
 //#define DDR_VREF_EXTERNAL                 (0x2)
 
+
 //#############################################################################
 //
 // Structure for MSCC inputs
@@ -216,7 +219,9 @@ typedef __packed struct user_input_msdg {
     uint16_t DimmType;          // Choose the Dimm type from one of below:
                                 // 0 = UDIMM
                                 // 1 = RDIMM 
-                                // 2 = LRDIMM
+                                // 2 = LRDIMM (Invalid for Explorer)
+                                // 3 = MDS-LRDIMM
+                                // 4 = MDS
 
     uint16_t CsPresent;         // Indicates presence of DRAM at each chip select for PHY. Each bit corresponds to a logical CS. 
                                 // If the bit is set to 1, the CS is connected to DRAM. 
@@ -1109,6 +1114,13 @@ uint32_t CalculateRegOffset_RxPb(  uint32_t                     byteNr,
  
 uint32_t CalculateRegOffset_AniBnPj( uint32_t                     pstateNr,
                                      uint32_t                     nibbleNr);
+uint32_t CalculateRegOffset_TxDq( uint32_t                     pstateNr,
+                                  uint32_t                     byteNr,
+                                  uint32_t                     rankNr,
+                                  uint32_t                     bitNr );
+uint32_t CalculateRegOffset_TxDqs( uint32_t                     pstateNr,
+                                   uint32_t                     sweepNibbleNr,
+                                   uint32_t                     rankNr);
                                                
 //uint32_t ddrphy_force_dl_update  (void) ;
 void ddrphy_mrs_read (uint8_t pstate, uint32_t  rankIndex, uint32_t nibbleIndex, uint32_t mprPage, uint32_t mprLoc);

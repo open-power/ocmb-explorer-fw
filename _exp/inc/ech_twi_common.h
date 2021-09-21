@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -35,6 +35,8 @@
 
 #include "pmcfw_types.h"
 #include "pmcfw_err.h"
+#include "exp_api.h"
+#include "ech.h"
 
 
 /*
@@ -55,37 +57,31 @@
 /*
 * Structures and Unions
 */
-
-/** 
-*  @brief 
-*   Boot Configuration Data
+/**
+*  @brief
+*   ECH TWI Deferred Command Handler Structure
 */
 typedef struct
 {
-    UINT32  raw_cfg_flags;  /**< raw configuration flags received from host */
-    BOOL    mfg_mode;       /**< manufacturing mode flag */
-    BOOL    ocapi_loopback; /**< OpenCAPI loopback mode flag */    
-    BOOL    host_boot_mode; /**< Host step-by-step boot mode */
-    UINT32  tl_mode;        /**< Transport Layer selection */
-    UINT32  dl_boot_mode;   /**< Data Link Layer boot mode */
-    UINT32  lane_cfg;       /**< lane configuration */
-    UINT32  serdes_freq;    /**< SerDes frequency */
-    BOOL    dfe_state;      /**< TRUE = DFE enabled, FALSE = DFE disabled */
-    BOOL    adapt_state;    /**< TRUE = Adaptation enabled, FALSE = Adaptation disabled */
-} ech_boot_cfg_struct;
+    volatile BOOL       deferred_cmd_flag;                      /**< When Set, VPE0 will process this command */
+    exp_twi_cmd_enum    command_id;                             /**< Command ID */
+    UINT32              (*deferred_cmd_handler)(UINT8 *, UINT32);       /**< Command Handler */
+    UINT8               *cmd_buf;                               /**< Command Buffer required for command handler */
+    UINT32               cmd_buf_idx;                           /**< Command Buffer index required for command handler */
+    VOID                (*callback_handler) (UINT8);            /**< Callback Handler */
+} ech_twi_deferred_cmd_handler_struct;
+
 
 
 /*
 ** Global variable
 */
 EXTERN ech_twi_deferred_cmd_handler_struct ech_def_handler;
-
 EXTERN UINT32 g_count_exp_fw_twi_cmd_status;
 EXTERN UINT32 g_exp_fw_twi_cmd_boot_config;
 EXTERN UINT32 g_exp_fw_twi_cmd_reg_addr_latch;
 EXTERN UINT32 g_exp_fw_twi_cmd_reg_read;
 EXTERN UINT32 g_exp_fw_twi_cmd_reg_write;
-EXTERN UINT8 ech_twi_status_byte;
 EXTERN UINT8 twi_cmd_id;
 EXTERN UINT8 ech_twi_fw_mode_byte;
 EXTERN BOOL ech_pqm_mode;
@@ -116,11 +112,10 @@ EXTERN VOID ech_twi_status_proc(UINT32 port_id);
 EXTERN VOID ech_twi_reg_read_proc(UINT32 port_id, UINT8* rx_buf);
 EXTERN VOID ech_twi_reg_write_proc(UINT8* rx_buf);
 EXTERN VOID ech_twi_reg_addr_latch_proc(UINT8* rx_buf);
-
-
 EXTERN VOID ech_twi_init(UINT32 mst_port, UINT32 slv_port, UINT32 slv_addr);
-
 EXTERN VOID ech_oc_init(VOID);
+EXTERN VOID ech_twi_poll_abort_flag_set(BOOL abort_flag);
+EXTERN BOOL ech_twi_poll_abort_flag_get(VOID);
 
 /* Callback */
 EXTERN VOID ech_twi_deferred_cmd_processing_struct_set(exp_twi_cmd_enum cmd_id, 

@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -103,7 +103,6 @@ PRIVATE BOOL ech_twi_pqm_get(VOID)
 * Public Functions
 */
 
-
 /**
 * @brief
 *   Set the Product Qualification Mode
@@ -134,7 +133,6 @@ PUBLIC VOID ech_twi_pqm_set(BOOL setting)
 * @note
 */
 PUBLIC VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_index)
-
 {
     switch (rx_buf_ptr[rx_index])
     {
@@ -144,11 +142,11 @@ PUBLIC VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_
             memcpy(&ech_twi_deferred_cmd_buf[0],&rx_buf_ptr[rx_index],EXP_TWI_BOOT_CFG_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_TWI_CMD_BOOT_CONFIG,
-                &ech_twi_boot_config_proc, 
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_BOOT_CFG_CMD_LEN,
-                rx_index);
+                                                       &ech_twi_boot_config_proc, 
+                                                       (VOID*)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_BOOT_CFG_CMD_LEN,
+                                                       rx_index);
             g_exp_fw_twi_cmd_boot_config++;
         }
         break;
@@ -216,8 +214,9 @@ PUBLIC VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_
             {
                 /* PQM has not been selected, increment command pointer */
                 ech_pqm_cmd_rx_index_increment(rx_buf_ptr, rx_index);
+
                 /* set the Status register */
-                ech_twi_status_byte = EXP_TWI_UNSUPPORTED;
+                ech_twi_status_byte_set(EXP_TWI_UNSUPPORTED);
             }
         }
         break;
@@ -236,34 +235,79 @@ PUBLIC VOID ech_twi_plat_slave_proc(UINT32 port_id, UINT8 *rx_buf_ptr, UINT8 rx_
         case EXP_FW_PQM_2D_BATHTUB_GET_READ:
         case EXP_FW_PQM_RX_ADAPTATION_OBJ_START:
         case EXP_FW_PQM_RX_ADAPTATION_OBJ_READ:                
+        {
             /* process the command */
             ech_pqm_cmd_proc(rx_buf_ptr, rx_index);
+        }
         break;
+
         /* 
         ** Even though EXP_FW_PQM_FORCE_DELAY_LINE_UPDATE is a PQM command, 
         ** it needs to be made available outside PQM mode.
         **/
        
         case EXP_FW_PQM_FORCE_DELAY_LINE_UPDATE:
+        {    
             /* Force Delay Line update PQM received, process it */
-            memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_DELAY_LINE_UPDATE_CMD_LEN);
+            memcpy(&ech_twi_deferred_cmd_buf[0], &rx_buf_ptr[rx_index], EXP_TWI_PQM_DELAY_LINE_UPDATE_CMD_LEN);
             ech_twi_status_byte_set(EXP_TWI_BUSY);
             ech_twi_deferred_cmd_processing_struct_set(EXP_FW_PQM_FORCE_DELAY_LINE_UPDATE,
-                &ech_pqm_force_delay_line_update, 
-                (void *)(&ech_twi_deferred_cmd_buf[0]),
-                &ech_twi_status_byte_set,
-                EXP_TWI_DELAY_LINE_UPDATE_CMD_LEN,
-                rx_index);
-            
+                                                       &ech_pqm_force_delay_line_update, 
+                                                       (VOID*)(&ech_twi_deferred_cmd_buf[0]),
+                                                       &ech_twi_status_byte_set,
+                                                       EXP_TWI_PQM_DELAY_LINE_UPDATE_CMD_LEN,
+                                                       rx_index);
+        }
         break;
+
+        case EXP_FW_TWI_POLL_ABORT:
+        {
+            bc_printf("Poll Abort command received\n");
+
+            if (FALSE == ech_twi_poll_abort_flag_get())
+            {
+                /* abort flag is not set so code on VPE0 is in infinite loop */
+
+                /* set the poll abort flag to exit polling loop */
+                ech_twi_poll_abort_flag_set(TRUE);
+            }
+
+            /* increment receive buffer index */
+            ech_twi_rx_index_inc(EXP_TWI_POLL_ABORT_CMD_LEN);
+        }
+        break;
+
+        case EXP_FW_TWI_FFE_SETTINGS:
+        {
+            /* extract the pre and post cursor and record the values */
+            UINT32 precursor = (rx_buf_ptr[rx_index + 2] << 24) |
+                               (rx_buf_ptr[rx_index + 3] << 16) |
+                               (rx_buf_ptr[rx_index + 4] << 8)  |
+                               (rx_buf_ptr[rx_index + 5] << 0);
+
+            UINT32 postcursor = (rx_buf_ptr[rx_index + 6] << 24) |
+                                (rx_buf_ptr[rx_index + 7] << 16) |
+                                (rx_buf_ptr[rx_index + 8] << 8)  |
+                                (rx_buf_ptr[rx_index + 9] << 0);
+
+            serdes_plat_ffe_precursor_set(precursor);
+            serdes_plat_ffe_postcursor_set(postcursor);
+
+            /* increment receive buffer index */
+            ech_twi_rx_index_inc(EXP_TWI_FFE_SETTINGS_CMD_LEN);
+        }
+        break;
+
         case EXP_FW_TWI_CMD_FW_DOWNLOAD:
         case EXP_FW_TWI_CMD_NULL:
         default:
+        {
             bc_printf("COMMAND : 0x%x\n", rx_buf_ptr[rx_index]);
             bc_printf("twi_activity 0x%08x\n: ", twi_activity);
-            bc_printf("ech_twi_rx_len : 0x%08x'n", ech_twi_rx_len);
+            bc_printf("ech_twi_rx_len : 0x%08x\n", ech_twi_rx_len);
             bc_printf("ech_twi_rx_index : 0x%08x\n",  ech_twi_rx_index);
             PMCFW_ASSERT(FALSE, EXP_TWI_INVALID_CMD);
+        }
         break;
     }
  }

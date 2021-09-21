@@ -85,6 +85,10 @@ EXTERN VOID serdes_plat_initialized_set(BOOL is_initialized);
 EXTERN BOOL serdes_plat_initialized_get(VOID);
 EXTERN UINT32  serdes_plat_lane_inversion_config(UINT8 lane_bitmask, UINT8 lane_pattern_bitmask);
 EXTERN UINT32 serdes_plat_iq_offset_calibration(UINT8 lane_bitmask);
+EXTERN VOID serdes_plat_ffe_precursor_set(UINT32 precursor);
+EXTERN VOID serdes_plat_ffe_postcursor_set(UINT32 postcursor);
+EXTERN UINT32 serdes_plat_ffe_precursor_get(VOID);
+EXTERN UINT32 serdes_plat_ffe_postcursor_get(VOID);
 
 #endif /* _SERDES_PLAT_H */
 

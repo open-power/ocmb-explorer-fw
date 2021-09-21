@@ -88,8 +88,8 @@ PUBLIC void expl_fca_bringup(void)
     /* For PE wait 8 seconds so their power supplies can come up */
     sys_timer_busy_wait_us(8000000);
 
-    /* For PE run serdes at 2560 GBPS and only intialize lane 4 */
-    rc = serdes_plat_low_level_single_lane_init(4,3,1);
+    /* For PE run serdes at 2560 GBPS and only initialize lane 4 */
+    rc = serdes_plat_low_level_init(0x10, EXP_SERDES_25_60_GBPS, 1);
 #endif
 
     bc_printf("Serdes Error_code = %x\n", rc);

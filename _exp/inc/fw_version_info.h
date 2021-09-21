@@ -44,9 +44,9 @@
 */
 #define FW_VERSION_MAJOR_RELEASE_NUMBER         8
 #define FW_VERSION_MINOR_RELEASE_NUMBER         0
-#define FW_VERSION_CL_NUMBER                    371808
+#define FW_VERSION_CL_NUMBER                    384401
 #define FW_VERSION_PATCH_RELEASE_NUMBER         0
-#define FW_VERSION_BUILD_DATE                   0x12172019
+#define FW_VERSION_BUILD_DATE                   0x04142020
 
 /*
 ** Macro Definitions

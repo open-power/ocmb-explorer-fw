@@ -1,38 +1,38 @@
-/********************************************************************************                                                                             
+/********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
-*                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
-*                                                                               
-* Licensed under the Apache License, Version 2.0 (the "License"); you may not 
-* use this file except in compliance with the License. You may obtain a copy of 
+*
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License"); you may not
+* use this file except in compliance with the License. You may obtain a copy of
 * the License at http://www.apache.org/licenses/LICENSE-2.0
-*                                                                               
-* Unless required by applicable law or agreed to in writing, software 
-* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT 
-* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the 
-* License for the specific language governing permissions and limitations under 
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+* License for the specific language governing permissions and limitations under
 * the License.
-*                                                                               
+*
 * Synopsys DDR Firmware
-*                                                                               
-* Licensee also agrees not to modify the Synopsys DDR Firmware. The binary 
-* Synopsys DDR Firmware may be used only in connection with Microchip integrated 
-* circuits that implement the Synopsys DDR PHY IP.  
-*                                                                               
-* Licensee will maintain the copyright, trademark, and other notices that appear 
-* on the Synopsys DDR Firmware, and reproduce such notices on all copies of the 
-* Synopsys DDR Firmware. 
-*                                                                               
-* THE SYNOPSYS FIRMWARE IS PROVIDED “AS IS” AND WITHOUT ANY WARRANTY.  SYNOPSYS 
-* AND MICROCHIP EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES, EXPRESS, IMPLIED OR 
-* OTHERWISE, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
-* PARTICULAR PURPOSE, AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF A 
+*
+* Licensee also agrees not to modify the Synopsys DDR Firmware. The binary
+* Synopsys DDR Firmware may be used only in connection with Microchip integrated
+* circuits that implement the Synopsys DDR PHY IP.
+*
+* Licensee will maintain the copyright, trademark, and other notices that appear
+* on the Synopsys DDR Firmware, and reproduce such notices on all copies of the
+* Synopsys DDR Firmware.
+*
+* THE SYNOPSYS FIRMWARE IS PROVIDED “AS IS” AND WITHOUT ANY WARRANTY.  SYNOPSYS
+* AND MICROCHIP EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES, EXPRESS, IMPLIED OR
+* OTHERWISE, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+* PARTICULAR PURPOSE, AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF A
 * COURSE OF DEALING OR USAGE OF TRADE.
-* 
-* IN NO EVENT SHALL SYNOPSYS OR MICROCHIP BE LIABLE FOR ANY DIRECT, INDIRECT, 
-* SPECIAL, INCIDENTAL, SPECULATIVE OR CONSEQUENTIAL DAMAGES OF ANY KIND RELATING 
-* TO THE SYNOPSYS FIRMWARE INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, LOSS OF 
-* USE, LOSS OF GOODWILL, OR INTERRUPTION OF BUSINESS, EVEN IF MICROCHIP OR 
+*
+* IN NO EVENT SHALL SYNOPSYS OR MICROCHIP BE LIABLE FOR ANY DIRECT, INDIRECT,
+* SPECIAL, INCIDENTAL, SPECULATIVE OR CONSEQUENTIAL DAMAGES OF ANY KIND RELATING
+* TO THE SYNOPSYS FIRMWARE INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, LOSS OF
+* USE, LOSS OF GOODWILL, OR INTERRUPTION OF BUSINESS, EVEN IF MICROCHIP OR
 * RECIPIENTS ARE ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 ********************************************************************************/
 
@@ -40,8 +40,8 @@
 * Description:
 *  Defines used for ddrBist.c
 *
-* $Revision: 1607 $
-* $Date: 2019-08-01 10:45:46 -0700 (Thu, 01 Aug 2019) $
+* $Revision: 1609 $
+* $Date: 2019-08-15 18:39:38 -0700 (Thu, 15 Aug 2019) $
 * $Author: xiealex1 $
 * Release $Name$
 *
@@ -186,8 +186,8 @@ typedef enum
 typedef struct
 {
     uint32_t                addressTest;     // Enable address test. 0:Disabled, 1:Enabled
-    uint32_t                addrIncr;        // Address Increment steps. 
-    uint32_t                rankIndex;       // rank index (3~0) 
+    uint32_t                addrIncr;        // Address Increment steps.
+    uint32_t                rankIndex;       // rank index (3~0)
     uint32_t                cid;             // logic rank address
     uint32_t                bank;            // bank address
     uint32_t                bg;              // bank group address
@@ -270,36 +270,36 @@ uint32_t ddrRunBistInfinite(ddr_bist_pattern_e       pattern);
 void ddrBistSetup( ddr_bist_setup_t  *bistSetupPtr);
 void ddrPrintBistResult(ddr_bist_result_t *singleBistResultPtr);
 uint32_t ddrBistInit(uint8_t ps, ddr_bist_setup_t *bistSetupPtr);
-uint32_t ddrRunBistSequence(ddr_bist_pattern_e   bistPattern,     
-                       uint32_t                  bistTimeout,     
-                       ddr_bist_result_t    *singleBistResultPtr); 
+uint32_t ddrRunBistSequence(ddr_bist_pattern_e   bistPattern,
+                       uint32_t                  bistTimeout,
+                       ddr_bist_result_t    *singleBistResultPtr);
 
 
-#ifdef PMC_DDR_SIM_DPI  
-int ddrBistSetSetup (ddr_bist_setup_t *bistSetupPtr, char *field, int value); 
+#ifdef PMC_DDR_SIM_DPI
+int ddrBistSetSetup (ddr_bist_setup_t *bistSetupPtr, char *field, int value);
 #endif
-void ddrPrintBistSetup(ddr_bist_setup_t *bistSetupPtr) ;  
+void ddrPrintBistSetup(ddr_bist_setup_t *bistSetupPtr) ;
 void ddrEnterBistCmd(void);
-void ddrExitBistCmd(void) ; 
+void ddrExitBistCmd(void) ;
 uint32_t ddrRunBistCmd(int cke, int csn, int cid, int ba, int bg, int act_n, int rasn, int casn, int wen, int addr13_0, int addr17, int pda);
 uint32_t ddrBistREF(int csn, int cid) ;
 uint32_t ddrBistCtrlUpd(void);
 uint32_t ddrBistSRE(int csn, int prv_cke);
 uint32_t ddrBistSRX0(int csn, int prv_cke);
 uint32_t ddrBistSRX1(int csn, int prv_cke);
-uint32_t ddrBistPDE(int csn, int prv_cke);  
+uint32_t ddrBistPDE(int csn, int prv_cke);
 uint32_t ddrBistPDX(int csn, int prv_cke);
 uint32_t ddrBistZQCL(int csn);
-uint32_t ddrBistZQCS(int csn); 
+uint32_t ddrBistZQCS(int csn);
 uint32_t ddrBistACT(int csn, int cid, int bg, int ba, int row);
 uint32_t ddrBistWRS8(int csn, int cid, int bg, int ba, int col, int pattern) ;
-uint32_t ddrBistRDS8(int csn, int cid, int bg, int ba, int col);    
+uint32_t ddrBistRDS8(int csn, int cid, int bg, int ba, int col);
 uint32_t ddrBistPRE(int csn, int cid, int bg, int ba) ;
-uint32_t ddrBistPREA(int csn, int cid) ; 
+uint32_t ddrBistPREA(int csn, int cid) ;
 uint32_t ddrBistWRAS8(int csn, int cid, int bg, int ba, int col, int pattern);
-uint32_t ddrBistRDAS8(int csn, int cid, int bg, int ba, int col); 
+uint32_t ddrBistRDAS8(int csn, int cid, int bg, int ba, int col);
 uint32_t ddrBistMRS(int csn, int idx, int value, int invert);
-uint32_t ddrBistMPRWr(int csn, int idx, int value, int invert) ; 
+uint32_t ddrBistMPRWr(int csn, int idx, int value, int invert) ;
 uint32_t ddrBistMPRRd(int csn, int idx, int invert) ;
 uint32_t ddrBistMRLTrainingEntry(void);
 uint32_t ddrBistMRLTrainingExit(void);
@@ -308,7 +308,7 @@ uint32_t ddrBistMRLTrainingRun(user_response_error_msdg_t *respErrPtr);
 uint32_t ddrBistRunningMRLTraining(uint32_t mrl, uint32_t patternSel, ddr_bist_mrl_train_t *mrlStatusPtr);
 uint32_t ddrBistMRSPDA(int csn, int idx, int value, int pdanibs, int invert);
 
-                                                     
+
 #endif /* DDR_BIST_H */
 
 

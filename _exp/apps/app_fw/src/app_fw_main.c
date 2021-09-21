@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -89,6 +89,7 @@
 #include "ccb_plat.h"
 #include "flashloader.h"
 #include "flash_partition_info.h"
+#include "ech_twi_common.h"
 
 #if (EXPLORER_BRINGUP == 1)
 EXTERN void expl_fca_bringup(void);

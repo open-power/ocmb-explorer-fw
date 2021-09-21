@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved. 
 *                                                                               
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not 
 * use this file except in compliance with the License. You may obtain a copy of 
@@ -19,18 +19,18 @@
 *     Generated register header file to be used by serdes_config_guide.c.
 *     
 *     This file is generated from:
-*     Foxhound_RevA_Config_Guide_pdox_r0_47.xlsx (0.47)
+*     Foxhound_RevA_Config_Guide_pdox_r0_53.xlsx (0.53)
 *     using this command:
 *     
-*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_47.xlsx
-*     -r0.47 -pFoxhound_RevA_Config_Guide_pdox_r0_47.parsed
+*     python ConfigGuideConv.py -gFoxhound_RevA_Config_Guide_pdox_r0_53.xlsx
+*     -r0.53 -pFoxhound_RevA_Config_Guide_pdox_r0_53.parsed
 *     -nnamespace_exp_p_a_release_047.tcl -cserdes_config_guide.c
 *     -hserdes_config_guide.h
 *     -xFHCG_init,FHCG_LBinit,FHCG_sim_init,FH_reset_deassert,FH_iddq_deassert,FH_CSU_open_fastsim,FH_TXRX_datapath_fastsim,FH_alignment_fastsim,FH_IQ_Offset_Calibration
 *     -fSERDES -a
 * 
-*
-*   NOTES:
+* 
+*   NOTES: 
 *     A number of functions were modified to reduce execessively large
 *     parameters lists and use pointers to data structures to pass parameter
 *     lists.
@@ -98,8 +98,7 @@ EXTERN BOOL SERDES_FH_CSU_init_2_generic(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_CSU_init_2_25g6(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_CSU_init_2_23g46(UINT32 csu_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_CSU_init_2_21g328(UINT32 csu_pcbi_base_addr);
-EXTERN BOOL SERDES_FH_TX_alignment(UINT32 csu_pcbi_base_addr,
-                                   UINT32 channel_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_TX_alignment(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_pattmon_dis(UINT32 channel_pcbi_base_addr);
 EXTERN BOOL SERDES_FH_pattmon_en(UINT32 channel_pcbi_base_addr,
                                  UINT32 mode,
@@ -172,20 +171,22 @@ EXTERN BOOL SERDES_FH_RX_Calibration(UINT32 csu_pcbi_base_addr,
 EXTERN BOOL SERDES_FH_overwr_rtrim(UINT32 channel_pcbi_base_addr,
                                    UINT32 rtrim_ovr_en);
 EXTERN BOOL SERDES_FH_NETX_Settings_value(UINT32 mtsb_ctrl_pcbi_base_addr,
-                                          UINT32 tx_p2b_d2en,
-                                          UINT32 tx_p2b_d1en,
-                                          UINT32 tx_p2a_pten,
-                                          UINT32 tx_p2a_d2en,
-                                          UINT32 tx_p2a_d1en,
-                                          UINT32 tx_p1b_d2en,
-                                          UINT32 tx_p1b_d1en,
-                                          UINT32 tx_p1a_pten,
-                                          UINT32 tx_p1a_d2en,
-                                          UINT32 tx_p1a_d1en,
-                                          UINT32 tx_p3a_d1en,
-                                          UINT32 tx_p2b_pten,
-                                          UINT32 tx_p1b_pten);
+                                          UINT32 tx_p3a_d1en);
 EXTERN BOOL SERDES_FH_NETX_Settings_default(UINT32 mtsb_ctrl_pcbi_base_addr);
+EXTERN BOOL SERDES_FH_NETX_Settings_calcprepost(UINT32 mtsb_ctrl_pcbi_base_addr,
+                                                UINT32 tx_p2b_d2en,
+                                                UINT32 tx_p2b_d1en,
+                                                UINT32 tx_p2a_pten,
+                                                UINT32 tx_p2a_d2en,
+                                                UINT32 tx_p2a_d1en,
+                                                UINT32 tx_p1b_d2en,
+                                                UINT32 tx_p1b_d1en,
+                                                UINT32 tx_p1a_pten,
+                                                UINT32 tx_p1a_d2en,
+                                                UINT32 tx_p1a_d1en,
+                                                UINT32 tx_p3a_d1en,
+                                                UINT32 tx_p2b_pten,
+                                                UINT32 tx_p1b_pten);
 EXTERN BOOL SERDES_FH_read_mabc_threshold(UINT32 mtsb_ctrl_pcbi_base_addr,
                                           UINT32 addr,
                                           UINT32 *mabc_data_ptr);

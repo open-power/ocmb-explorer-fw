@@ -1,38 +1,38 @@
-/********************************************************************************                                                                             
+/********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
-*                                                                               
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved. 
-*                                                                               
-* Licensed under the Apache License, Version 2.0 (the "License"); you may not 
-* use this file except in compliance with the License. You may obtain a copy of 
+*
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License"); you may not
+* use this file except in compliance with the License. You may obtain a copy of
 * the License at http://www.apache.org/licenses/LICENSE-2.0
-*                                                                               
-* Unless required by applicable law or agreed to in writing, software 
-* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT 
-* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the 
-* License for the specific language governing permissions and limitations under 
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+* License for the specific language governing permissions and limitations under
 * the License.
-*                                                                               
+*
 * Synopsys DDR Firmware
-*                                                                               
-* Licensee also agrees not to modify the Synopsys DDR Firmware. The binary 
-* Synopsys DDR Firmware may be used only in connection with Microchip integrated 
-* circuits that implement the Synopsys DDR PHY IP.  
-*                                                                               
-* Licensee will maintain the copyright, trademark, and other notices that appear 
-* on the Synopsys DDR Firmware, and reproduce such notices on all copies of the 
-* Synopsys DDR Firmware. 
-*                                                                               
-* THE SYNOPSYS FIRMWARE IS PROVIDED “AS IS” AND WITHOUT ANY WARRANTY.  SYNOPSYS 
-* AND MICROCHIP EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES, EXPRESS, IMPLIED OR 
-* OTHERWISE, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
-* PARTICULAR PURPOSE, AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF A 
+*
+* Licensee also agrees not to modify the Synopsys DDR Firmware. The binary
+* Synopsys DDR Firmware may be used only in connection with Microchip integrated
+* circuits that implement the Synopsys DDR PHY IP.
+*
+* Licensee will maintain the copyright, trademark, and other notices that appear
+* on the Synopsys DDR Firmware, and reproduce such notices on all copies of the
+* Synopsys DDR Firmware.
+*
+* THE SYNOPSYS FIRMWARE IS PROVIDED “AS IS” AND WITHOUT ANY WARRANTY.  SYNOPSYS
+* AND MICROCHIP EXPRESSLY DISCLAIM ANY AND ALL WARRANTIES, EXPRESS, IMPLIED OR
+* OTHERWISE, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+* PARTICULAR PURPOSE, AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF A
 * COURSE OF DEALING OR USAGE OF TRADE.
-* 
-* IN NO EVENT SHALL SYNOPSYS OR MICROCHIP BE LIABLE FOR ANY DIRECT, INDIRECT, 
-* SPECIAL, INCIDENTAL, SPECULATIVE OR CONSEQUENTIAL DAMAGES OF ANY KIND RELATING 
-* TO THE SYNOPSYS FIRMWARE INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, LOSS OF 
-* USE, LOSS OF GOODWILL, OR INTERRUPTION OF BUSINESS, EVEN IF MICROCHIP OR 
+*
+* IN NO EVENT SHALL SYNOPSYS OR MICROCHIP BE LIABLE FOR ANY DIRECT, INDIRECT,
+* SPECIAL, INCIDENTAL, SPECULATIVE OR CONSEQUENTIAL DAMAGES OF ANY KIND RELATING
+* TO THE SYNOPSYS FIRMWARE INCLUDING BUT NOT LIMITED TO LOSS OF PROFITS, LOSS OF
+* USE, LOSS OF GOODWILL, OR INTERRUPTION OF BUSINESS, EVEN IF MICROCHIP OR
 * RECIPIENTS ARE ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 ********************************************************************************/
 
@@ -245,6 +245,8 @@ typedef enum
     DDRPHY_GET_MESSAGE_BLOCKC_ENUM_11,
     DDRPHY_GET_MESSAGE_BLOCKC_ENUM_12,
     DDRPHY_GET_MESSAGE_BLOCKC_ENUM_13,
+    DDRPHY_GET_MESSAGE_BLOCKC_ENUM_14,
+    DDRPHY_GET_MESSAGE_BLOCKC_ENUM_15,
     DDRPHY_LOW_LEVEL_IOC_ENUM_0,
     DDRPHY_LOW_LEVEL_IOC_ENUM_1,
     DDRPHY_LOW_LEVEL_IOC_ENUM_2,
@@ -6948,6 +6950,7 @@ typedef enum
     DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6679,
     DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6680,
     DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6681,
+    DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6682,
     DDRPHY_SET_MESSAGE_BLOCKC_ENUM_0,
     DDRPHY_SET_MESSAGE_BLOCKC_ENUM_1,
     DDRPHY_SET_MESSAGE_BLOCKC_ENUM_2,
@@ -9806,6 +9809,9 @@ typedef enum
     DPI_INTFC_ENUM_166,
     DPI_INTFC_ENUM_167,
     DPI_INTFC_ENUM_168,
+    DPI_INTFC_ENUM_169,
+    DPI_INTFC_ENUM_170,
+    DPI_INTFC_ENUM_171,
     NUM_TRACE_ENTRIES,
 } trace_entry_enum;
 
@@ -10041,6 +10047,8 @@ typedef enum
 #define DDRPHY_GET_MESSAGE_BLOCKC_11 DDRPHY_GET_MESSAGE_BLOCKC_ENUM_11, "%d \"%s\" %x", "[ddrphy_getMb_DDR4R_1D]: Getting mb_DDR4R_1D[%d]->%s = 0x%x\n"
 #define DDRPHY_GET_MESSAGE_BLOCKC_12 DDRPHY_GET_MESSAGE_BLOCKC_ENUM_12, "\"%s\"", "[ddrphy_getMb_DDR4R_2D]: ERROR: unknown message block field name '%s'\n"
 #define DDRPHY_GET_MESSAGE_BLOCKC_13 DDRPHY_GET_MESSAGE_BLOCKC_ENUM_13, "%d \"%s\" %x", "[ddrphy_getMb_DDR4R_2D]: Getting mb_DDR4R_2D[%d]->%s = 0x%x\n"
+#define DDRPHY_GET_MESSAGE_BLOCKC_14 DDRPHY_GET_MESSAGE_BLOCKC_ENUM_14, "\"%s\"", "[ddrphy_getMb_MDSLR_1D]: ERROR: unknown message block field name '%s'\n"
+#define DDRPHY_GET_MESSAGE_BLOCKC_15 DDRPHY_GET_MESSAGE_BLOCKC_ENUM_15, "%d \"%s\" %x", "[ddrphy_getMb_MDSLR_1D]: Getting mb_MDSLR_1D[%d]->%s = 0x%x\n"
 #define DDRPHY_LOW_LEVEL_IOC_0 DDRPHY_LOW_LEVEL_IOC_ENUM_0, "%x %x", "C domain: DDR Read PHY: addr=0x%x data=0x%x\n"
 #define DDRPHY_LOW_LEVEL_IOC_1 DDRPHY_LOW_LEVEL_IOC_ENUM_1, "%x %x", "C domain: DDR Write PHY: addr=0x%x data=0x%x\n"
 #define DDRPHY_LOW_LEVEL_IOC_2 DDRPHY_LOW_LEVEL_IOC_ENUM_2, "%x %x", "C domain: DDR Read Wrapper: addr=0x%x data=0x%x\n"
@@ -16744,6 +16752,7 @@ typedef enum
 #define DDRPHY_PRINT_MESSAGE_BLOCKC_6679 DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6679, "%d %x", "mb_DDR4R_2D[%d].ALT_CAS_L = %x\n"
 #define DDRPHY_PRINT_MESSAGE_BLOCKC_6680 DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6680, "%d %x", "mb_DDR4R_2D[%d].ALT_WCAS_L = %x\n"
 #define DDRPHY_PRINT_MESSAGE_BLOCKC_6681 DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6681, "%d %x", "mb_DDR4R_2D[%d].D4Misc = %x\n"
+#define DDRPHY_PRINT_MESSAGE_BLOCKC_6682 DDRPHY_PRINT_MESSAGE_BLOCKC_ENUM_6682, "%d %x", "mb_DDR4LR_2D[%d].Reserved00 = %x\n"
 #define DDRPHY_SET_MESSAGE_BLOCKC_0 DDRPHY_SET_MESSAGE_BLOCKC_ENUM_0, "\"%s\"", "[ddrphy_setMb_ATE]: ERROR: unknown message block field name '%s'\n"
 #define DDRPHY_SET_MESSAGE_BLOCKC_1 DDRPHY_SET_MESSAGE_BLOCKC_ENUM_1, "%d \"%s\" %x", "[ddrphy_setMb_ATE]: Setting mb_ATE[%d]->%s = 0x%x\n"
 #define DDRPHY_SET_MESSAGE_BLOCKC_2 DDRPHY_SET_MESSAGE_BLOCKC_ENUM_2, "\"%s\"", "[ddrphy_setMb_DDR4U_1D]: ERROR: unknown message block field name '%s'\n"
@@ -19602,6 +19611,9 @@ typedef enum
 #define DPI_INTFC_166 DPI_INTFC_ENUM_166, "", "C domain: end c_func_dq_bypass_disable()\n"
 #define DPI_INTFC_167 DPI_INTFC_ENUM_167, "", "ddrphy_enterMissionModeMsdg: // Enable access to the internal CSRs by setting the MicroContMuxSel CSR to 0. \n"
 #define DPI_INTFC_168 DPI_INTFC_ENUM_168, "", "ddrphy_enterMissionModeMsdg: // This allows the memory controller unrestricted access to the configuration CSRs. \n"
+#define DPI_INTFC_169 DPI_INTFC_ENUM_169, "", "C domain: start c_func_dq_bypass_read()\n"
+#define DPI_INTFC_170 DPI_INTFC_ENUM_170, "%2x %2x %2x %2x %2x %2x %2x %2x %2x %2x", "C domain: end c_func_dq_bypass_read(dq[79:0] =0x%2x_%2x_%2x_%2x_%2x_%2x_%2x_%2x_%2x_%2x)\n"
+#define DPI_INTFC_171 DPI_INTFC_ENUM_171, "%08x", "ddrMdsInitSeq Error! rc=%08x\n"
 
 #endif /* DDRPHY_TRACE_STRINGS_H_ */
 

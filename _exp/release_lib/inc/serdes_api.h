@@ -1,7 +1,7 @@
 /********************************************************************************
 * MICROCHIP PM8596 EXPLORER FIRMWARE
 *
-* Copyright (c) 2018, 2019 Microchip Technology Inc. All rights reserved.
+* Copyright (c) 2018, 2019, 2020 Microchip Technology Inc. All rights reserved.
 *
 * Licensed under the Apache License, Version 2.0 (the "License"); you may not
 * use this file except in compliance with the License. You may obtain a copy of
@@ -57,5 +57,19 @@ EXTERN UINT32 serdes_api_adpt_done_get(UINT32 lane_offset);
 EXTERN INT32 serdes_api_d_iq_offset_read(UINT32 lane_offset);
 EXTERN INT32 serdes_api_d_iq_offset_write(UINT32 lane_offset, UINT32 d_iq_offset);
 EXTERN INT32 serdes_api_t_iq_offset_read(UINT32 lane_offset);
+EXTERN VOID serdes_api_ffe_prepost_settings_read(UINT32 lane_offset, 
+                                                 UINT32* tx_p2b_d2en_ptr,
+                                                 UINT32* tx_p2b_d1en_ptr,
+                                                 UINT32* tx_p2a_pten_ptr,
+                                                 UINT32* tx_p2a_d2en_ptr,
+                                                 UINT32* tx_p2a_d1en_ptr,
+                                                 UINT32* tx_p1b_d2en_ptr,
+                                                 UINT32* tx_p1b_d1en_ptr,
+                                                 UINT32* tx_p1a_pten_ptr,
+                                                 UINT32* tx_p1a_d2en_ptr,
+                                                 UINT32* tx_p1a_d1en_ptr,
+                                                 UINT32* tx_p3a_d1en_ptr,
+                                                 UINT32* tx_p2b_pten_ptr,
+                                                 UINT32* tx_p1b_pten_ptr);
 
 #endif /* _SERDES_API_H */

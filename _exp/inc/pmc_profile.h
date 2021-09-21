@@ -158,13 +158,13 @@
 ** Use for Explorer SerDes testing allowing host to set timing phase offset preload.
 ** Field PH_OFS_T_PRELOAD field in OBJECT_PRELOAD_VAL_5 register.
 */
-#define EXPLORER_HOST_SET_PH_OFS_T_PRELOAD      0
+#define EXPLORER_HOST_SET_PH_OFS_T_PRELOAD      1
 
 /*
 ** Use for Explorer SerDes testing allowing host to set data timing phase offset.
 ** Field D_IQ_OFFSET field in TR_CONFIG_5 register.
 */
-#define EXPLORER_HOST_SET_D_IQ_OFFSET           0
+#define EXPLORER_HOST_SET_D_IQ_OFFSET           1
 
 /*
 ** Use for Explorer SerDes testing to enable additional debug output on UART and
