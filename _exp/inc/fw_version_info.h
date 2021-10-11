@@ -44,9 +44,9 @@
 */
 #define FW_VERSION_MAJOR_RELEASE_NUMBER         8
 #define FW_VERSION_MINOR_RELEASE_NUMBER         3
-#define FW_VERSION_CL_NUMBER                    439412
+#define FW_VERSION_CL_NUMBER                    444714
 #define FW_VERSION_PATCH_RELEASE_NUMBER         0
-#define FW_VERSION_BUILD_DATE                   0x07302021
+#define FW_VERSION_BUILD_DATE                   0x09282021
 
 /*
 ** This can be used by the host to track changes in the FW API. It should be 

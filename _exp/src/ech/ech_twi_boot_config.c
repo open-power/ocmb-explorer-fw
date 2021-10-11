@@ -124,6 +124,7 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
     UINT32 current_lane;
     UINT32 lane_offset;
     UINT32 lane_bitmask;
+    UINT32 lane_pattern_bitmask;
     top_plat_lock_struct lock_struct;
 
     /*
@@ -339,9 +340,16 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
             }
         }
 
-        /* get the enabled lanes bit mask */
+        /* 
+        ** Get the enabled lanes bit mask. lane_bitmask includes lane 4 in cases where there are fewer than 8 lanes. It has 
+        ** to be configured so that it can be the master for tx_alignment. lane_pattern_bitmask only includes the lanes which 
+        ** are expected to have a signal (ie. not lane 4 in x4 mode) and is used for adapting HW objects or running cal. 
+        */
         lane_bitmask = ech_lane_cfg_bitmask_get();
         bc_printf("\n    lane_bitmask = 0x%02X\n", lane_bitmask);
+
+        lane_pattern_bitmask = ech_lane_cfg_pattern_bitmask_get();
+        bc_printf("    lane_pattern_bitmask = 0x%02X\n", lane_pattern_bitmask);
 
         /* implementation based on EXPLORER and OCMB configuration guides */
         if (EXP_TWI_SUCCESS != ech_twi_extended_status)
@@ -509,7 +517,7 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
             */
             bc_printf("\nTWI_BOOT_CONFIG: Enable pattern monitors\n");
             UINT8 pattmon_detected_bitmask;
-            rc = serdes_plat_pattmon_config(lane_bitmask, SERDES_CDR_CAL_DWELL_10_MS, SERDES_BER_25G6_PER_MS_1e_4, &pattmon_detected_bitmask);
+            rc = serdes_plat_pattmon_config(lane_pattern_bitmask, SERDES_CDR_CAL_DWELL_10_MS, SERDES_BER_25G6_PER_MS_1e_4, &pattmon_detected_bitmask);
 
             if (rc != PMC_SUCCESS) 
             {
@@ -521,7 +529,7 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
             ** calibrate DIQ and TIQ offsets 
             ** config guide FH_IQ_Offset_Calibration 
             */ 
-            rc = SERDES_FH_IQ_Offset_Calibration(lane_bitmask);
+            rc = SERDES_FH_IQ_Offset_Calibration(lane_pattern_bitmask);
 
             if (rc != PMC_SUCCESS)
             {
@@ -536,7 +544,7 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
             */
             for (current_lane = 0; current_lane < SERDES_LANES; current_lane++)
             {
-                if (lane_bitmask & (1 << current_lane))
+                if (lane_pattern_bitmask & (1 << current_lane))
                 {
                     /* set the offset for the lane being configured */
                     lane_offset = current_lane * SERDES_LANE_REG_OFFSET;
@@ -582,7 +590,7 @@ PUBLIC UINT32 ech_twi_boot_config_proc(UINT8* rx_buf, UINT32 rx_index)
             ** config guide FH_CDR_Offset_Calibration 
             */ 
             UINT8 converged_lane_bitmask;
-            rc = SERDES_FH_CDR_Offset_Calibration_Centered(lane_bitmask & pattmon_detected_bitmask,
+            rc = SERDES_FH_CDR_Offset_Calibration_Centered(lane_pattern_bitmask & pattmon_detected_bitmask,
                                                   SERDES_IMPAIRMENT_PJ_SIN0,
                                                   SERDES_CDR_CAL_DWELL_10_MS,
                                                   SERDES_CDR_SLO_DWELL_100_MS,

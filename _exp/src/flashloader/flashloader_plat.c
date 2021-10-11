@@ -446,34 +446,42 @@ PUBLIC UINT32 flashloader_plat_flash_command_read_length_get(void)
 *   Success or Failure code
 *
 */
-PUBLIC UINT32 flashloader_plat_flash_read_command_validate(INT8 flash_partition_id, UINT32 flash_partition_addr_offset,UINT32 flash_read_length, UINT32 *flash_read_base)
+PUBLIC UINT32 flashloader_plat_flash_read_command_validate(INT8 flash_partition_id, 
+                                                           UINT32 flash_partition_addr_offset,
+                                                           UINT32 flash_read_length,
+                                                           UINT32 *flash_read_base)
 {
-    int i;
-    UINT32 flash_partition_offset=0;
-    *flash_read_base =0;
-    for (i=0; i < SPI_FLASH_PARTITION_NUMBER; i++)
+    UINT32 i;
+    UINT32 flash_partition_offset = 0;
+    *flash_read_base = 0;
+
+    for (i = 0; i < SPI_FLASH_PARTITION_NUMBER; i++)
     {
-        if(img_list[i].image_id != flash_partition_id)
+        if (img_list[i].image_id != flash_partition_id)
         {
             continue;
         }
         else
         {
             /* Got the flash partition, now check remaining parameter*/
-            if(flash_read_length > FLASH_PLAT_REQ_RESP_BUF_LENGTH)
+            if (flash_read_length > FLASH_PLAT_REQ_RESP_BUF_LENGTH)
             {
                 return FLASHLOADER_ERR_INVALID_READ_LENGTH;
             }
+
             /* Image A and B are of same length, so using A*/
-            if((flash_partition_addr_offset+ flash_read_length) > SPI_FLASH_FW_IMG_A_SIZE)
+            if ((flash_partition_addr_offset + flash_read_length) > SPI_FLASH_FW_IMG_A_SIZE)
             {
                 return FLASHLOADER_ERR_ADDRESS_OUT_OF_RANGE;
             }
+
             flash_partition_offset = (img_list[i].image_id == 'A') ? SPI_FLASH_FW_IMG_A_HDR_ADDR : SPI_FLASH_FW_IMG_B_HDR_ADDR;
-            *flash_read_base  = (UINT32)(FLASH_BASE_ADDR + flash_partition_offset+ flash_partition_addr_offset);
+            *flash_read_base  = (UINT32)(flash_partition_offset + flash_partition_addr_offset);
+
             return PMC_SUCCESS;                
         }
     }
+
     return FLASHLOADER_ERR_INVALID_PARTITION_ID;
 }
 
@@ -489,9 +497,9 @@ PUBLIC UINT32 flashloader_plat_flash_read_command_validate(INT8 flash_partition_
 *   None
 *
 */
-PUBLIC VOID flashloader_plat_flash_read(void *dest_start_addr, void * src_start_addr,UINT32 flash_length)
+PUBLIC VOID flashloader_plat_flash_read(void* dest_start_addr, void* src_start_addr, UINT32 flash_length)
 {
-    memcpy(dest_start_addr,src_start_addr, flash_length);
+    memcpy(dest_start_addr, src_start_addr, flash_length);
 }
 
 /**
@@ -1019,6 +1027,7 @@ PUBLIC VOID flashloader_plat_send_respnse(UINT8 return_code,
     exp_rsp_struct* rsp_ptr = ech_rsp_ptr_get();
     exp_cmd_struct* cmd_ptr = ech_cmd_ptr_get();
     UINT8* ext_data_ptr = ech_ext_data_ptr_get();
+
     /* set the success indication */
     rsp_ptr->parms[0] = return_code;
 
@@ -1031,7 +1040,7 @@ PUBLIC VOID flashloader_plat_send_respnse(UINT8 return_code,
     /* set the no extended data flag */
     rsp_ptr->flags = (ext_resp_length > 0) ? EXP_FW_EXTENDED_DATA : EXP_FW_NO_EXTENDED_DATA;
 
-    if(ext_resp_length > 0 )
+    if (ext_resp_length > 0 )
     {
         /* Copy the result in Extended buffer*/
         memcpy(ext_data_ptr,
@@ -1041,7 +1050,6 @@ PUBLIC VOID flashloader_plat_send_respnse(UINT8 return_code,
 
     /* send the response */
     ech_oc_rsp_proc();
-
 }
 
 
